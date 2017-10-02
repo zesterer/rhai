@@ -313,7 +313,7 @@ impl<'a> Iterator for TokenIterator<'a> {
                         return Some(Token::True);
                     } else if out == "false" {
                         return Some(Token::False);
-                    } else if out == "var" {
+                    } else if out == "let" {
                         return Some(Token::Var);
                     } else if out == "if" {
                         return Some(Token::If);

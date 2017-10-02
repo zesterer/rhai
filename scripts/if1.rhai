@@ -1,5 +1,5 @@
-var a = true;
+let a = true;
 if (a) {
-    var x = 56;
+    let x = 56;
     print(x);
 }

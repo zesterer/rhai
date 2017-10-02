@@ -1438,7 +1438,7 @@ fn test_bool_op2() {
 fn test_op_prec() {
     let mut engine = Engine::new();
 
-    if let Ok(result) = engine.eval::<i64>("var x = 0; if x == 10 || true { x = 1} x") {
+    if let Ok(result) = engine.eval::<i64>("let x = 0; if x == 10 || true { x = 1} x") {
         assert_eq!(result, 1);
     } else {
         assert!(false);
@@ -1472,7 +1472,7 @@ fn test_if() {
 fn test_while() {
     let mut engine = Engine::new();
 
-    if let Ok(result) = engine.eval::<i64>("var x = 0; while x < 10 { x = x + 1; if x > 5 { \
+    if let Ok(result) = engine.eval::<i64>("let x = 0; while x < 10 { x = x + 1; if x > 5 { \
                                             break } } x") {
         assert_eq!(result, 6);
     } else {
@@ -1485,7 +1485,7 @@ fn test_var_scope() {
     let mut engine = Engine::new();
     let mut scope: Scope = Vec::new();
 
-    if let Ok(_) = engine.eval_with_scope::<()>(&mut scope, "var x = 4 + 5") {
+    if let Ok(_) = engine.eval_with_scope::<()>(&mut scope, "let x = 4 + 5") {
     } else {
         assert!(false);
     }
@@ -1507,7 +1507,7 @@ fn test_var_scope() {
         assert!(false);
     }
 
-    if let Ok(_) = engine.eval_with_scope::<()>(&mut scope, "{var x = 3}") {
+    if let Ok(_) = engine.eval_with_scope::<()>(&mut scope, "{let x = 3}") {
     } else {
         assert!(false);
     }
@@ -1543,7 +1543,7 @@ fn test_method_call() {
     engine.register_fn("update", TestStruct::update);
     engine.register_fn("new_ts", TestStruct::new);
 
-    if let Ok(result) = engine.eval::<TestStruct>("var x = new_ts(); x.update(); x") {
+    if let Ok(result) = engine.eval::<TestStruct>("let x = new_ts(); x.update(); x") {
         assert_eq!(result.x, 1001);
     } else {
         assert!(false);
@@ -1579,7 +1579,7 @@ fn test_get_set() {
     engine.register_get_set("x", TestStruct::get_x, TestStruct::set_x);
     engine.register_fn("new_ts", TestStruct::new);
 
-    if let Ok(result) = engine.eval::<i64>("var a = new_ts(); a.x = 500; a.x") {
+    if let Ok(result) = engine.eval::<i64>("let a = new_ts(); a.x = 500; a.x") {
         assert_eq!(result, 500);
     } else {
         assert!(false);
@@ -1636,7 +1636,7 @@ fn test_big_get_set() {
 
     engine.register_fn("new_tp", TestParent::new);
 
-    if let Ok(result) = engine.eval::<i64>("var a = new_tp(); a.child.x = 500; a.child.x") {
+    if let Ok(result) = engine.eval::<i64>("let a = new_tp(); a.child.x = 500; a.child.x") {
         assert_eq!(result, 500);
     } else {
         assert!(false);
@@ -1693,13 +1693,13 @@ fn test_string() {
 fn test_arrays() {
     let mut engine = Engine::new();
 
-    if let Ok(result) = engine.eval::<i64>("var x = [1, 2, 3]; x[1]") {
+    if let Ok(result) = engine.eval::<i64>("let x = [1, 2, 3]; x[1]") {
         assert_eq!(result, 2);
     } else {
         assert!(false);
     }
 
-    if let Ok(result) = engine.eval::<i64>("var y = [1, 2, 3]; y[1] = 5; y[1]") {
+    if let Ok(result) = engine.eval::<i64>("let y = [1, 2, 3]; y[1] = 5; y[1]") {
         assert_eq!(result, 5);
     } else {
         assert!(false);
@@ -1739,13 +1739,13 @@ fn test_array_with_structs() {
     engine.register_fn("update", TestStruct::update);
     engine.register_fn("new_ts", TestStruct::new);
 
-    if let Ok(result) = engine.eval::<i64>("var a = [new_ts()]; a[0].x") {
+    if let Ok(result) = engine.eval::<i64>("let a = [new_ts()]; a[0].x") {
         assert_eq!(result, 1);
     } else {
         assert!(false);
     }
 
-    if let Ok(result) = engine.eval::<i64>("var a = [new_ts()]; a[0].x = 100; a[0].update(); \
+    if let Ok(result) = engine.eval::<i64>("let a = [new_ts()]; a[0].x = 100; a[0].update(); \
                                             a[0].x") {
         assert_eq!(result, 1100);
     } else {
