@@ -131,7 +131,7 @@ fn main() {
     engine.register_fn("update", TestStruct::update);
     engine.register_fn("new_ts", TestStruct::new);
 
-    if let Ok(result) = engine.eval::<TestStruct>("var x = new_ts(); x.update(); x") {
+    if let Ok(result) = engine.eval::<TestStruct>("let x = new_ts(); x.update(); x") {
         println!("result: {}", result.x); // prints 1001
     }
 }
@@ -174,7 +174,7 @@ engine.register_fn("new_ts", TestStruct::new);
 
 Finally, we call our script.  The script can see the function and method we registered earlier.  We need to get the result back out from script land just as before, this time casting to our custom struct type.
 ```Rust
-if let Ok(result) = engine.eval::<TestStruct>("var x = new_ts(); x.update(); x") {
+if let Ok(result) = engine.eval::<TestStruct>("let x = new_ts(); x.update(); x") {
     println!("result: {}", result.x); // prints 1001
 }
 ```
@@ -212,7 +212,7 @@ engine.register_type::<TestStruct>();
 engine.register_get_set("x", TestStruct::get_x, TestStruct::set_x);
 engine.register_fn("new_ts", TestStruct::new);
 
-if let Ok(result) = engine.eval::<i64>("var a = new_ts(); a.x = 500; a.x") {
+if let Ok(result) = engine.eval::<i64>("let a = new_ts(); a.x = 500; a.x") {
     println!("result: {}", result);
 }
 ```
@@ -231,7 +231,7 @@ fn main() {
     let mut engine = Engine::new();
     let mut scope: Scope = Vec::new();
 
-    if let Ok(_) = engine.eval_with_scope::<()>(&mut scope, "var x = 4 + 5") { } else { assert!(false); }
+    if let Ok(_) = engine.eval_with_scope::<()>(&mut scope, "let x = 4 + 5") { } else { assert!(false); }
 
     if let Ok(result) = engine.eval_with_scope::<i64>(&mut scope, "x") {
        println!("result: {}", result);
@@ -244,13 +244,13 @@ fn main() {
 ## Variables
 
 ```Rust
-var x = 3;
+let x = 3;
 ```
 
 ## Operators
 
 ```Rust
-var x = (1 + 2) * (6 - 4) / 2;
+let x = (1 + 2) * (6 - 4) / 2;
 ```
 
 ## If
@@ -265,7 +265,7 @@ else {
 
 ## While
 ```Rust
-var x = 10;
+let x = 10;
 while x > 0 {
     print(x);
     if x == 5 {
@@ -301,7 +301,7 @@ print(add(2, 3))
 You can create arrays of values, and then access them with numeric indices.
 
 ```Rust
-var y = [1, 2, 3];
+let y = [1, 2, 3];
 y[1] = 5;
 
 print(y[1]);
@@ -310,7 +310,7 @@ print(y[1]);
 ## Members and methods
 
 ```Rust
-var a = new_ts();
+let a = new_ts();
 a.x = 500;
 a.update();
 ```
@@ -318,7 +318,7 @@ a.update();
 ## Strings and Chars
 
 ```Rust
-var name = "Bob";
-var middle_initial = 'C';
+let name = "Bob";
+let middle_initial = 'C';
 ```
 
