@@ -24,5 +24,5 @@ fn main() {
     engine.register_fn("update", TestStruct::update);
     engine.register_fn("new_ts", TestStruct::new);
 
-    println!("{:?}", engine.eval::<TestStruct>("var x = [new_ts()]; x[0].update(); x[0]"));
+    println!("{:?}", engine.eval::<TestStruct>("let x = [new_ts()]; x[0].update(); x[0]"));
 }
