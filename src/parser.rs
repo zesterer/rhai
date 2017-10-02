@@ -463,7 +463,7 @@ impl<'a> Iterator for TokenIterator<'a> {
                         }
                     }
                 }
-                ' ' | '\n' | '\r' => (),
+                _x if _x.is_whitespace() => (),
                 _ => return Some(Token::LexErr(LexError::UnexpectedChar)),
             }
         }
