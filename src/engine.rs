@@ -546,7 +546,7 @@ impl Engine {
                 if args.is_empty() {
                     self.call_fn(fn_name, Some(this_ptr), None, None, None, None, None)
                 } else if args.len() == 1 {
-                    let mut arg = try!(self.eval_expr(scope, &args[0]));
+                    let mut arg = self.eval_expr(scope, &args[0])?;
 
                     self.call_fn(fn_name,
                                  Some(this_ptr),
@@ -556,8 +556,8 @@ impl Engine {
                                  None,
                                  None)
                 } else if args.len() == 2 {
-                    let mut arg1 = try!(self.eval_expr(scope, &args[0]));
-                    let mut arg2 = try!(self.eval_expr(scope, &args[1]));
+                    let mut arg1 = self.eval_expr(scope, &args[0])?;
+                    let mut arg2 = self.eval_expr(scope, &args[1])?;
 
                     self.call_fn(fn_name,
                                  Some(this_ptr),
@@ -567,9 +567,9 @@ impl Engine {
                                  None,
                                  None)
                 } else if args.len() == 3 {
-                    let mut arg1 = try!(self.eval_expr(scope, &args[0]));
-                    let mut arg2 = try!(self.eval_expr(scope, &args[1]));
-                    let mut arg3 = try!(self.eval_expr(scope, &args[2]));
+                    let mut arg1 = self.eval_expr(scope, &args[0])?;
+                    let mut arg2 = self.eval_expr(scope, &args[1])?;
+                    let mut arg3 = self.eval_expr(scope, &args[2])?;
 
                     self.call_fn(fn_name,
                                  Some(this_ptr),
@@ -579,10 +579,10 @@ impl Engine {
                                  None,
                                  None)
                 } else if args.len() == 4 {
-                    let mut arg1 = try!(self.eval_expr(scope, &args[0]));
-                    let mut arg2 = try!(self.eval_expr(scope, &args[1]));
-                    let mut arg3 = try!(self.eval_expr(scope, &args[2]));
-                    let mut arg4 = try!(self.eval_expr(scope, &args[3]));
+                    let mut arg1 = self.eval_expr(scope, &args[0])?;
+                    let mut arg2 = self.eval_expr(scope, &args[1])?;
+                    let mut arg3 = self.eval_expr(scope, &args[2])?;
+                    let mut arg4 = self.eval_expr(scope, &args[3])?;
 
                     self.call_fn(fn_name,
                                  Some(this_ptr),
@@ -592,11 +592,11 @@ impl Engine {
                                  Some(&mut arg4),
                                  None)
                 } else if args.len() == 5 {
-                    let mut arg1 = try!(self.eval_expr(scope, &args[0]));
-                    let mut arg2 = try!(self.eval_expr(scope, &args[1]));
-                    let mut arg3 = try!(self.eval_expr(scope, &args[2]));
-                    let mut arg4 = try!(self.eval_expr(scope, &args[3]));
-                    let mut arg5 = try!(self.eval_expr(scope, &args[4]));
+                    let mut arg1 = self.eval_expr(scope, &args[0])?;
+                    let mut arg2 = self.eval_expr(scope, &args[1])?;
+                    let mut arg3 = self.eval_expr(scope, &args[2])?;
+                    let mut arg4 = self.eval_expr(scope, &args[3])?;
+                    let mut arg5 = self.eval_expr(scope, &args[4])?;
 
                     self.call_fn(fn_name,
                                  Some(this_ptr),
@@ -614,7 +614,7 @@ impl Engine {
                 self.call_fn(&get_fn_name, Some(this_ptr), None, None, None, None, None)
             }
             Expr::Index(ref id, ref idx_raw) => {
-                let idx = try!(self.eval_expr(scope, idx_raw));
+                let idx = self.eval_expr(scope, idx_raw)?;
 
                 let get_fn_name = "get$".to_string() + id;
 
@@ -706,7 +706,7 @@ impl Engine {
                 Err(EvalAltResult::ErrorVariableNotFound(id.clone()))
             }
             Expr::Index(ref id, ref idx_raw) => {
-                let idx_boxed = try!(self.eval_expr(scope, idx_raw));
+                let idx_boxed = self.eval_expr(scope, idx_raw)?;
                 let idx = if let Ok(i) = idx_boxed.downcast::<i64>() {
                     i
                 } else {
@@ -857,7 +857,7 @@ impl Engine {
                 Err(EvalAltResult::ErrorAssignmentToUnknownLHS)
             }
             Expr::Index(ref id, ref idx_raw) => {
-                let idx_boxed = try!(self.eval_expr(scope, idx_raw));
+                let idx_boxed = self.eval_expr(scope, idx_raw)?;
                 let idx = if let Ok(i) = idx_boxed.downcast::<i64>() {
                     i
                 } else {
@@ -924,7 +924,7 @@ impl Engine {
                 Err(EvalAltResult::ErrorVariableNotFound(id.clone()))
             }
             Expr::Index(ref id, ref idx_raw) => {
-                let idx = try!(self.eval_expr(scope, idx_raw));
+                let idx = self.eval_expr(scope, idx_raw)?;
 
                 for &mut (ref name, ref mut val) in &mut scope.iter_mut().rev() {
                     if *id == *name {
@@ -950,7 +950,7 @@ impl Engine {
                 Err(EvalAltResult::ErrorVariableNotFound(id.clone()))
             }
             Expr::Assignment(ref id, ref rhs) => {
-                let rhs_val = try!(self.eval_expr(scope, rhs));
+                let rhs_val = self.eval_expr(scope, rhs)?;
 
                 match **id {
                     Expr::Identifier(ref n) => {
@@ -965,7 +965,7 @@ impl Engine {
                         Err(EvalAltResult::ErrorVariableNotFound(n.clone()))
                     }
                     Expr::Index(ref id, ref idx_raw) => {
-                        let idx = try!(self.eval_expr(scope, idx_raw));
+                        let idx = self.eval_expr(scope, idx_raw)?;
 
                         for &mut (ref name, ref mut val) in &mut scope.iter_mut().rev() {
                             if *id == *name {
@@ -996,7 +996,7 @@ impl Engine {
                 let mut arr = Vec::new();
 
                 for item in &(*contents) {
-                    let arg = try!(self.eval_expr(scope, item));
+                    let arg = self.eval_expr(scope, item)?;
                     arr.push(arg);
                 }
 
@@ -1006,12 +1006,12 @@ impl Engine {
                 if args.is_empty() {
                     self.call_fn(fn_name, None, None, None, None, None, None)
                 } else if args.len() == 1 {
-                    let mut arg = try!(self.eval_expr(scope, &args[0]));
+                    let mut arg = self.eval_expr(scope, &args[0])?;
 
                     self.call_fn(fn_name, Some(&mut arg), None, None, None, None, None)
                 } else if args.len() == 2 {
-                    let mut arg1 = try!(self.eval_expr(scope, &args[0]));
-                    let mut arg2 = try!(self.eval_expr(scope, &args[1]));
+                    let mut arg1 = self.eval_expr(scope, &args[0])?;
+                    let mut arg2 = self.eval_expr(scope, &args[1])?;
 
                     self.call_fn(fn_name,
                                  Some(&mut arg1),
@@ -1021,9 +1021,9 @@ impl Engine {
                                  None,
                                  None)
                 } else if args.len() == 3 {
-                    let mut arg1 = try!(self.eval_expr(scope, &args[0]));
-                    let mut arg2 = try!(self.eval_expr(scope, &args[1]));
-                    let mut arg3 = try!(self.eval_expr(scope, &args[2]));
+                    let mut arg1 = self.eval_expr(scope, &args[0])?;
+                    let mut arg2 = self.eval_expr(scope, &args[1])?;
+                    let mut arg3 = self.eval_expr(scope, &args[2])?;
 
                     self.call_fn(fn_name,
                                  Some(&mut arg1),
@@ -1033,10 +1033,10 @@ impl Engine {
                                  None,
                                  None)
                 } else if args.len() == 4 {
-                    let mut arg1 = try!(self.eval_expr(scope, &args[0]));
-                    let mut arg2 = try!(self.eval_expr(scope, &args[1]));
-                    let mut arg3 = try!(self.eval_expr(scope, &args[2]));
-                    let mut arg4 = try!(self.eval_expr(scope, &args[3]));
+                    let mut arg1 = self.eval_expr(scope, &args[0])?;
+                    let mut arg2 = self.eval_expr(scope, &args[1])?;
+                    let mut arg3 = self.eval_expr(scope, &args[2])?;
+                    let mut arg4 = self.eval_expr(scope, &args[3])?;
 
                     self.call_fn(fn_name,
                                  Some(&mut arg1),
@@ -1046,11 +1046,11 @@ impl Engine {
                                  None,
                                  None)
                 } else if args.len() == 5 {
-                    let mut arg1 = try!(self.eval_expr(scope, &args[0]));
-                    let mut arg2 = try!(self.eval_expr(scope, &args[1]));
-                    let mut arg3 = try!(self.eval_expr(scope, &args[2]));
-                    let mut arg4 = try!(self.eval_expr(scope, &args[3]));
-                    let mut arg5 = try!(self.eval_expr(scope, &args[4]));
+                    let mut arg1 = self.eval_expr(scope, &args[0])?;
+                    let mut arg2 = self.eval_expr(scope, &args[1])?;
+                    let mut arg3 = self.eval_expr(scope, &args[2])?;
+                    let mut arg4 = self.eval_expr(scope, &args[3])?;
+                    let mut arg5 = self.eval_expr(scope, &args[4])?;
 
                     self.call_fn(fn_name,
                                  Some(&mut arg1),
@@ -1060,12 +1060,12 @@ impl Engine {
                                  Some(&mut arg5),
                                  None)
                 } else if args.len() == 6 {
-                    let mut arg1 = try!(self.eval_expr(scope, &args[0]));
-                    let mut arg2 = try!(self.eval_expr(scope, &args[1]));
-                    let mut arg3 = try!(self.eval_expr(scope, &args[2]));
-                    let mut arg4 = try!(self.eval_expr(scope, &args[3]));
-                    let mut arg5 = try!(self.eval_expr(scope, &args[4]));
-                    let mut arg6 = try!(self.eval_expr(scope, &args[5]));
+                    let mut arg1 = self.eval_expr(scope, &args[0])?;
+                    let mut arg2 = self.eval_expr(scope, &args[1])?;
+                    let mut arg3 = self.eval_expr(scope, &args[2])?;
+                    let mut arg4 = self.eval_expr(scope, &args[3])?;
+                    let mut arg5 = self.eval_expr(scope, &args[4])?;
+                    let mut arg6 = self.eval_expr(scope, &args[5])?;
 
                     self.call_fn(fn_name,
                                  Some(&mut arg1),
@@ -1105,7 +1105,7 @@ impl Engine {
                 last_result
             }
             Stmt::If(ref guard, ref body) => {
-                let guard_result = try!(self.eval_expr(scope, guard));
+                let guard_result = self.eval_expr(scope, guard)?;
                 match guard_result.downcast::<bool>() {
                     Ok(g) => {
                         if *g {
@@ -1118,7 +1118,7 @@ impl Engine {
                 }
             }
             Stmt::IfElse(ref guard, ref body, ref else_body) => {
-                let guard_result = try!(self.eval_expr(scope, guard));
+                let guard_result = self.eval_expr(scope, guard)?;
                 match guard_result.downcast::<bool>() {
                     Ok(g) => {
                         if *g {
@@ -1132,7 +1132,7 @@ impl Engine {
             }
             Stmt::While(ref guard, ref body) => {
                 loop {
-                    let guard_result = try!(self.eval_expr(scope, guard));
+                    let guard_result = self.eval_expr(scope, guard)?;
                     match guard_result.downcast::<bool>() {
                         Ok(g) => {
                             if *g {
@@ -1156,13 +1156,13 @@ impl Engine {
             Stmt::Break => Err(EvalAltResult::LoopBreak),
             Stmt::Return => Err(EvalAltResult::Return(Box::new(()))),
             Stmt::ReturnWithVal(ref a) => {
-                let result = try!(self.eval_expr(scope, a));
+                let result = self.eval_expr(scope, a)?;
                 Err(EvalAltResult::Return(result))
             }
             Stmt::Var(ref name, ref init) => {
                 match *init {
                     Some(ref v) => {
-                        let i = try!(self.eval_expr(scope, v));
+                        let i = self.eval_expr(scope, v)?;
                         scope.push((name.clone(), i));
                     }
                     None => {
@@ -1268,45 +1268,19 @@ impl Engine {
             )
         }
 
-        fn add<T: Add>(x: T, y: T) -> <T as Add>::Output {
-            x + y
-        }
-        fn sub<T: Sub>(x: T, y: T) -> <T as Sub>::Output {
-            x - y
-        }
-        fn mul<T: Mul>(x: T, y: T) -> <T as Mul>::Output {
-            x * y
-        }
-        fn div<T: Div>(x: T, y: T) -> <T as Div>::Output {
-            x / y
-        }
-        fn lt<T: Ord>(x: T, y: T) -> bool {
-            x < y
-        }
-        fn lte<T: Ord>(x: T, y: T) -> bool {
-            x <= y
-        }
-        fn gt<T: Ord>(x: T, y: T) -> bool {
-            x > y
-        }
-        fn gte<T: Ord>(x: T, y: T) -> bool {
-            x >= y
-        }
-        fn eq<T: Eq>(x: T, y: T) -> bool {
-            x == y
-        }
-        fn ne<T: Eq>(x: T, y: T) -> bool {
-            x != y
-        }
-        fn and(x: bool, y: bool) -> bool {
-            x && y
-        }
-        fn or(x: bool, y: bool) -> bool {
-            x || y
-        }
-        fn concat(x: String, y: String) -> String {
-            x + &y
-        }
+        fn add<T: Add>(x: T, y: T) -> <T as Add>::Output { x + y }
+        fn sub<T: Sub>(x: T, y: T) -> <T as Sub>::Output { x - y }
+        fn mul<T: Mul>(x: T, y: T) -> <T as Mul>::Output { x * y }
+        fn div<T: Div>(x: T, y: T) -> <T as Div>::Output { x / y }
+        fn lt<T: Ord>(x: T, y: T)  -> bool { x < y  }
+        fn lte<T: Ord>(x: T, y: T) -> bool { x <= y }
+        fn gt<T: Ord>(x: T, y: T)  -> bool { x > y  }
+        fn gte<T: Ord>(x: T, y: T) -> bool { x >= y }
+        fn eq<T: Eq>(x: T, y: T)   -> bool { x == y }
+        fn ne<T: Eq>(x: T, y: T)   -> bool { x != y }
+        fn and(x: bool, y: bool)   -> bool { x && y }
+        fn or(x: bool, y: bool)    -> bool { x || y }
+        fn concat(x: String, y: String) -> String { x + &y }
 
         reg_op!(engine, "+", add, i32, i64, u32, u64, f32, f64);
         reg_op!(engine, "-", sub, i32, i64, u32, u64, f32, f64);
