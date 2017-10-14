@@ -67,9 +67,7 @@ impl Error for ParseError {
         }
     }
 
-    fn cause(&self) -> Option<&Error> {
-        None
-    }
+    fn cause(&self) -> Option<&Error> { None }
 }
 
 impl fmt::Display for ParseError {
@@ -299,8 +297,8 @@ impl<'a> Iterator for TokenIterator<'a> {
 
                     while let Some(&nxt) = self.char_stream.peek() {
                         match nxt {
-                            '0'...'9' | 'A'...'Z' | 'a'...'z' | '_' => {
-                                result.push(nxt);
+                            x if x.is_alphanumeric() || x == '_' => {
+                                result.push(x);
                                 self.char_stream.next();
                             }
                             _ => break,
@@ -309,26 +307,17 @@ impl<'a> Iterator for TokenIterator<'a> {
 
                     let out: String = result.iter().cloned().collect();
 
-                    if out == "true" {
-                        return Some(Token::True);
-                    } else if out == "false" {
-                        return Some(Token::False);
-                    } else if out == "let" {
-                        return Some(Token::Var);
-                    } else if out == "if" {
-                        return Some(Token::If);
-                    } else if out == "else" {
-                        return Some(Token::Else);
-                    } else if out == "while" {
-                        return Some(Token::While);
-                    } else if out == "break" {
-                        return Some(Token::Break);
-                    } else if out == "return" {
-                        return Some(Token::Return);
-                    } else if out == "fn" {
-                        return Some(Token::Fn);
-                    } else {
-                        return Some(Token::Identifier(out));
+                    match out.as_ref() {
+                        "true" => return Some(Token::True),
+                        "false" => return Some(Token::False),
+                        "let" => return Some(Token::Var),
+                        "if" => return Some(Token::If),
+                        "else" => return Some(Token::Else),
+                        "while" => return Some(Token::While),
+                        "break" => return Some(Token::Break),
+                        "return" => return Some(Token::Return),
+                        "fn" => return Some(Token::Fn),
+                        x => return Some(Token::Identifier(x.to_string()))
                     }
                 }
                 '"' => {
@@ -355,57 +344,27 @@ impl<'a> Iterator for TokenIterator<'a> {
                         Err(e) => return Some(Token::LexErr(e)),
                     }
                 }
-                '{' => {
-                    return Some(Token::LCurly);
-                }
-                '}' => {
-                    return Some(Token::RCurly);
-                }
-                '(' => {
-                    return Some(Token::LParen);
-                }
-                ')' => {
-                    return Some(Token::RParen);
-                }
-                '[' => {
-                    return Some(Token::LSquare);
-                }
-                ']' => {
-                    return Some(Token::RSquare);
-                }
-                '+' => {
-                    return Some(Token::Plus);
-                }
-                '-' => {
-                    return Some(Token::Minus);
-                }
-                '*' => {
-                    return Some(Token::Multiply);
-                }
-                '/' => {
-                    return Some(Token::Divide);
-                }
-                ';' => {
-                    return Some(Token::Semicolon);
-                }
-                ':' => {
-                    return Some(Token::Colon);
-                }
-                ',' => {
-                    return Some(Token::Comma);
-                }
-                '.' => {
-                    return Some(Token::Period);
-                }
+                '{' => return Some(Token::LCurly),
+                '}' => return Some(Token::RCurly),
+                '(' => return Some(Token::LParen),
+                ')' => return Some(Token::RParen),
+                '[' => return Some(Token::LSquare),
+                ']' => return Some(Token::RSquare),
+                '+' => return Some(Token::Plus),
+                '-' => return Some(Token::Minus),
+                '*' => return Some(Token::Multiply),
+                '/' => return Some(Token::Divide),
+                ';' => return Some(Token::Semicolon),
+                ':' => return Some(Token::Colon),
+                ',' => return Some(Token::Comma),
+                '.' => return Some(Token::Period),
                 '=' => {
                     match self.char_stream.peek() {
                         Some(&'=') => {
                             self.char_stream.next();
                             return Some(Token::EqualTo);
                         }
-                        _ => {
-                            return Some(Token::Equals);
-                        }
+                        _ => return Some(Token::Equals),
                     }
                 }
                 '<' => {
@@ -414,9 +373,7 @@ impl<'a> Iterator for TokenIterator<'a> {
                             self.char_stream.next();
                             return Some(Token::LessThanEqual);
                         }
-                        _ => {
-                            return Some(Token::LessThan);
-                        }
+                        _ => return Some(Token::LessThan),
                     }
                 }
                 '>' => {
@@ -425,9 +382,7 @@ impl<'a> Iterator for TokenIterator<'a> {
                             self.char_stream.next();
                             return Some(Token::GreaterThanEqual);
                         }
-                        _ => {
-                            return Some(Token::GreaterThan);
-                        }
+                        _ => return Some(Token::GreaterThan),
                     }
                 }
                 '!' => {
@@ -436,9 +391,7 @@ impl<'a> Iterator for TokenIterator<'a> {
                             self.char_stream.next();
                             return Some(Token::NotEqualTo);
                         }
-                        _ => {
-                            return Some(Token::Bang);
-                        }
+                        _ => return Some(Token::Bang),
                     }
                 }
                 '|' => {
@@ -447,9 +400,7 @@ impl<'a> Iterator for TokenIterator<'a> {
                             self.char_stream.next();
                             return Some(Token::Or);
                         }
-                        _ => {
-                            return Some(Token::Pipe);
-                        }
+                        _ => return Some(Token::Pipe),
                     }
                 }
                 '&' => {
@@ -458,9 +409,7 @@ impl<'a> Iterator for TokenIterator<'a> {
                             self.char_stream.next();
                             return Some(Token::And);
                         }
-                        _ => {
-                            return Some(Token::Ampersand);
-                        }
+                        _ => return Some(Token::Ampersand),
                     }
                 }
                 _x if _x.is_whitespace() => (),
