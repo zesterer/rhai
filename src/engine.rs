@@ -1241,6 +1241,63 @@ impl Engine {
         }
     }
 
+    pub fn consume_file(&mut self, fname: &str) -> Result<(), EvalAltResult> {
+        use std::fs::File;
+        use std::io::prelude::*;
+
+        if let Ok(mut f) = File::open(fname) {
+            let mut contents = String::new();
+
+            if f.read_to_string(&mut contents).is_ok() {
+                if let e @ Err(_) = self.consume(&contents) {
+                    return e;
+                } else { return Ok(()); }
+            } else {
+                Err(EvalAltResult::ErrorCantOpenScriptFile)
+            }
+        } else {
+            Err(EvalAltResult::ErrorCantOpenScriptFile)
+        }
+    }
+
+    pub fn consume(&mut self, input: &str) -> Result<(), EvalAltResult> {
+        let mut scope: Scope = Scope::new();
+
+        let res = self.consume_with_scope(&mut scope, input);
+
+        res
+    }
+
+    pub fn consume_with_scope(&mut self, scope: &mut Scope, input: &str) -> Result<(), EvalAltResult> {
+        let tokens = lex(input);
+
+        let mut peekables = tokens.peekable();
+        let tree = parse(&mut peekables);
+
+        match tree {
+            Ok((ref os, ref fns)) => {
+                for f in fns {
+                    if f.params.len() > 6 {
+                        return Ok(());
+                    }
+                    let name = f.name.clone();
+                    let local_f = f.clone();
+                    let ent = self.fns.entry(name).or_insert_with(Vec::new);
+                    (*ent).push(FnType::InternalFn(local_f));
+                }
+
+                for o in os {
+                    if let Err(e) = self.eval_stmt(scope, o) {
+                        return Err(e);
+                    }
+                }
+
+                Ok(())
+            },
+            Err(_) => Err(EvalAltResult::ErrorFunctionArgMismatch),
+        }
+    }
+
     pub fn register_default_lib(engine: &mut Engine) {
         engine.register_type::<i32>();
         engine.register_type::<u32>();
@@ -1303,7 +1360,6 @@ impl Engine {
         // FIXME?  Registering array lookups are a special case because we want to return boxes
         // directly let ent = engine.fns.entry("[]".to_string()).or_insert_with(Vec::new);
         // (*ent).push(FnType::ExternalFn2(Box::new(idx)));
-
     }
 
     pub fn new() -> Engine {
