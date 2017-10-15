@@ -37,6 +37,7 @@ The repository contains several examples in the `examples` folder:
 - `reuse_scope` evaluates two pieces of code in separate runs, but using a common scope
 - `rhai_runner` runs each filename passed to it as a Rhai script
 - `simple_fn` shows how to register a Rust function to a Rhai engine
+- `repl` a simple REPL, see source code for what it can do at the moment
 
 Examples can be run with the following command:
 ```bash
