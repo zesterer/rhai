@@ -1,3 +1,6 @@
+use engine::{Engine, Scope, EvalAltResult};
+use fn_register::FnRegister;
+
 #[test]
 fn test_number_literal() {
     let mut engine = Engine::new();

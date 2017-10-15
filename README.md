@@ -29,6 +29,20 @@ Other cool projects to check out:
 * [ChaiScript](http://chaiscript.com/) - A strong inspiration for Rhai.  An embedded scripting language for C++ that I helped created many moons ago, now being lead by my cousin.
 * You can also check out the list of [scripting languages for Rust](http://libs.rs/scripting/) on [libs.rs](http://libs.rs/)
 
+## Examples
+The repository contains several examples in the `examples` folder:
+- `arrays_and_structs` demonstrates registering a new type to Rhai and the usage of arrays on it
+- `custom_types_and_methods` shows how to register a type and methods for it
+- `hello` simple example that evaluates an expression and prints the result
+- `reuse_scope` evaluates two pieces of code in separate runs, but using a common scope
+- `rhai_runner` runs each filename passed to it as a Rhai script
+- `simple_fn` shows how to register a Rust function to a Rhai engine
+
+Examples can be run with the following command:
+```bash
+cargo run --example name
+```
+
 # Hello world
 
 To get going with Rhai, you create an instance of the scripting engine and then run eval.
