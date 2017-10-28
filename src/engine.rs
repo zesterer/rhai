@@ -91,14 +91,44 @@ pub enum FnType {
     InternalFn(FnDef),
 }
 
+/// Rhai's engine type. This is what you use to run Rhai scripts
+///
+/// ```rust
+/// extern crate rhai;
+/// use rhai::Engine;
+/// 
+/// fn main() {
+///     let mut engine = Engine::new();
+/// 
+///     if let Ok(result) = engine.eval::<i64>("40 + 2") {
+///         println!("Answer: {}", result);  // prints 42
+///     }
+/// }
+/// ```
 pub struct Engine {
     pub fns: HashMap<String, Vec<FnType>>,
 }
 
+/// A type containing information about current scope.
+/// Useful for keeping state between `Engine` runs
+///
+/// ```rust
+/// use rhai::{Engine, Scope};
+/// 
+/// let mut engine = Engine::new();
+/// let mut my_scope = Scope::new();
+/// 
+/// assert!(engine.eval_with_scope::<()>(&mut my_scope, "let x = 5;").is_ok());
+/// assert_eq!(engine.eval_with_scope::<i64>(&mut my_scope, "x + 1").unwrap(), 6);
+/// ```
+///
+/// Between runs, `Engine` only remembers functions when not using own `Scope`.
 pub type Scope = Vec<(String, Box<Any>)>;
 
 impl Engine {
-    fn call_fn(&self,
+    /// Universal method for calling functions, that are either
+    /// registered with the `Engine` or written in Rhai
+    pub fn call_fn(&self,
                name: &str,
                arg1: Option<&mut Box<Any>>,
                arg2: Option<&mut Box<Any>>,
@@ -500,6 +530,8 @@ impl Engine {
         }
     }
 
+    /// Register a type for use with Engine. Keep in mind that
+    /// your type must implement Clone.
     pub fn register_type<T: Clone + Any>(&mut self) {
         fn clone_helper<T: Clone>(t: T) -> T {
             t.clone()
@@ -508,6 +540,7 @@ impl Engine {
         self.register_fn("clone", clone_helper as fn(T) -> T);
     }
 
+    /// Register a get function for a member of a registered type
     pub fn register_get<T: Clone + Any, U: Clone + Any, F>(&mut self, name: &str, get_fn: F)
         where F: 'static + Fn(&mut T) -> U
     {
@@ -516,6 +549,7 @@ impl Engine {
         self.register_fn(&get_name, get_fn);
     }
 
+    /// Register a set function for a member of a registered type
     pub fn register_set<T: Clone + Any, U: Clone + Any, F>(&mut self, name: &str, set_fn: F)
         where F: 'static + Fn(&mut T, U) -> ()
     {
@@ -524,6 +558,7 @@ impl Engine {
         self.register_fn(&set_name, set_fn);
     }
 
+    /// Shorthand for registering both getters and setters
     pub fn register_get_set<T: Clone + Any, U: Clone + Any, F, G>(&mut self,
                                                                   name: &str,
                                                                   get_fn: F,
@@ -1187,6 +1222,7 @@ impl Engine {
         }
     }
 
+    /// Evaluate a file
     pub fn eval_file<T: Any + Clone>(&mut self, fname: &str) -> Result<T, EvalAltResult> {
         use std::fs::File;
         use std::io::prelude::*;
@@ -1204,12 +1240,14 @@ impl Engine {
         }
     }
 
+    /// Evaluate a string
     pub fn eval<T: Any + Clone>(&mut self, input: &str) -> Result<T, EvalAltResult> {
         let mut scope: Scope = Vec::new();
 
         self.eval_with_scope(&mut scope, input)
     }
 
+    /// Evaluate with own scope
     pub fn eval_with_scope<T: Any + Clone>(&mut self,
                                            scope: &mut Scope,
                                            input: &str)
@@ -1254,6 +1292,9 @@ impl Engine {
         }
     }
 
+    /// Evaluate a file, but only return errors, if there are any.
+    /// Useful for when you don't need the result, but still need
+    /// to keep track of possible errors
     pub fn consume_file(&mut self, fname: &str) -> Result<(), EvalAltResult> {
         use std::fs::File;
         use std::io::prelude::*;
@@ -1273,6 +1314,9 @@ impl Engine {
         }
     }
 
+    /// Evaluate a string, but only return errors, if there are any.
+    /// Useful for when you don't need the result, but still need
+    /// to keep track of possible errors
     pub fn consume(&mut self, input: &str) -> Result<(), EvalAltResult> {
         let mut scope: Scope = Scope::new();
 
@@ -1281,6 +1325,9 @@ impl Engine {
         res
     }
 
+    /// Evaluate a string with own scoppe, but only return errors, if there are any.
+    /// Useful for when you don't need the result, but still need
+    /// to keep track of possible errors
     pub fn consume_with_scope(&mut self, scope: &mut Scope, input: &str) -> Result<(), EvalAltResult> {
         let tokens = lex(input);
 
@@ -1311,6 +1358,8 @@ impl Engine {
         }
     }
 
+    /// Register the default library. That means, numberic types, char, bool
+    /// String, arithmetics and string concatenations.
     pub fn register_default_lib(engine: &mut Engine) {
         engine.register_type::<i32>();
         engine.register_type::<u32>();
@@ -1388,6 +1437,7 @@ impl Engine {
         // (*ent).push(FnType::ExternalFn2(Box::new(idx)));
     }
 
+    /// Make a new engine
     pub fn new() -> Engine {
         let mut engine = Engine { fns: HashMap::new() };
 
