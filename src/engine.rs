@@ -7,7 +7,7 @@ use std::fmt;
 use parser::{lex, parse, Expr, Stmt, FnDef};
 use fn_register::FnRegister;
 
-use std::ops::{Add, Sub, Mul, Div};
+use std::ops::{Add, Sub, Mul, Div, Neg};
 use std::cmp::{Ord, Eq};
 
 #[derive(Debug)]
@@ -1317,6 +1317,14 @@ impl Engine {
             )
         }
 
+        macro_rules! reg_un {
+            ($engine:expr, $x:expr, $op:expr, $( $y:ty ),*) => (
+                $(
+                    $engine.register_fn($x, ($op as fn(x: $y)->$y));
+                )*
+            )
+        }
+
         macro_rules! reg_cmp {
             ($engine:expr, $x:expr, $op:expr, $( $y:ty ),*) => (
                 $(
@@ -1329,6 +1337,7 @@ impl Engine {
         fn sub<T: Sub>(x: T, y: T) -> <T as Sub>::Output { x - y }
         fn mul<T: Mul>(x: T, y: T) -> <T as Mul>::Output { x * y }
         fn div<T: Div>(x: T, y: T) -> <T as Div>::Output { x / y }
+        fn neg<T: Neg>(x: T) -> <T as Neg>::Output { -x }
         fn lt<T: Ord>(x: T, y: T)  -> bool { x < y  }
         fn lte<T: Ord>(x: T, y: T) -> bool { x <= y }
         fn gt<T: Ord>(x: T, y: T)  -> bool { x > y  }
@@ -1337,6 +1346,7 @@ impl Engine {
         fn ne<T: Eq>(x: T, y: T)   -> bool { x != y }
         fn and(x: bool, y: bool)   -> bool { x && y }
         fn or(x: bool, y: bool)    -> bool { x || y }
+        fn not(x: bool)            -> bool { !x }
         fn concat(x: String, y: String) -> String { x + &y }
 
         reg_op!(engine, "+", add, i32, i64, u32, u64, f32, f64);
@@ -1353,6 +1363,9 @@ impl Engine {
 
         reg_op!(engine, "||", or, bool);
         reg_op!(engine, "&&", and, bool);
+
+        reg_un!(engine, "-", neg, i32, i64, f32, f64);
+        reg_un!(engine, "!", not, bool);
 
         engine.register_fn("+", concat);
 

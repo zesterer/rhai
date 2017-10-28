@@ -4,12 +4,13 @@ use std::iter::Peekable;
 use std::str::Chars;
 use std::char;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum LexError {
     UnexpectedChar,
     MalformedEscapeSequence,
     MalformedNumber,
     MalformedChar,
+    Nothing
 }
 
 impl Error for LexError {
@@ -19,6 +20,7 @@ impl Error for LexError {
             LexError::MalformedEscapeSequence => "Unexpected values in escape sequence",
             LexError::MalformedNumber => "Unexpected characters in number",
             LexError::MalformedChar => "Char constant not a single character",
+            LexError::Nothing => "This error is for internal use only"
         }
     }
 
@@ -111,7 +113,7 @@ pub enum Expr {
     False,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Token {
     IntConst(i64),
     Identifier(String),
@@ -124,7 +126,9 @@ pub enum Token {
     LSquare,
     RSquare,
     Plus,
+    UnaryPlus,
     Minus,
+    UnaryMinus,
     Multiply,
     Divide,
     Semicolon,
@@ -155,7 +159,91 @@ pub enum Token {
     LexErr(LexError),
 }
 
+impl Token {
+    // if another operator is after these, it's probably an unary operator
+    // not sure about fn's name
+    pub fn is_next_unary(&self) -> bool {
+        use self::Token::*;
+
+        match *self {
+            LCurly           | // (+expr) - is unary
+            // RCurly           | {expr} - expr not unary & is closing
+            LParen           | // {-expr} - is unary
+            // RParen           | (expr) - expr not unary & is closing
+            LSquare          | // [-expr] - is unary
+            // RSquare          | [expr] - expr not unary & is closing
+            Plus             |
+            UnaryPlus        |
+            Minus            |
+            UnaryMinus       |
+            Multiply         |
+            Divide           |
+            Colon            |
+            Comma            |
+            Period           |
+            Equals           |
+            LessThan         |
+            GreaterThan      |
+            Bang             |
+            LessThanEqual    |
+            GreaterThanEqual |
+            EqualTo          |
+            NotEqualTo       |
+            Pipe             |
+            Or               |
+            Ampersand        |
+            And              |
+            Return => true,
+            _ => false,
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn is_bin_op(&self) -> bool {
+        use self::Token::*;
+
+        match *self {
+            RCurly           |
+            RParen           |
+            RSquare          |
+            Plus             |
+            Minus            |
+            Multiply         |
+            Divide           |
+            Comma            |
+            // Period           | <- does period count?
+            Equals           |
+            LessThan         |
+            GreaterThan      |
+            LessThanEqual    |
+            GreaterThanEqual |
+            EqualTo          |
+            NotEqualTo       |
+            Pipe             |
+            Or               |
+            Ampersand        |
+            And => true,
+            _ => false,
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn is_un_op(&self) -> bool {
+        use self::Token::*;
+
+        match *self {
+            UnaryPlus        |
+            UnaryMinus       |
+            Equals           |
+            Bang             |
+            Return => true,
+            _ => false,
+        }
+    }
+}
+
 pub struct TokenIterator<'a> {
+    last: Token,
     char_stream: Peekable<Chars<'a>>,
 }
 
@@ -262,12 +350,8 @@ impl<'a> TokenIterator<'a> {
         let out: String = result.iter().cloned().collect();
         Ok(out)
     }
-}
 
-impl<'a> Iterator for TokenIterator<'a> {
-    type Item = Token;
-
-    fn next(&mut self) -> Option<Self::Item> {
+    fn inner_next(&mut self) -> Option<Token> {
         while let Some(c) = self.char_stream.next() {
             match c {
                 '0'...'9' => {
@@ -350,8 +434,14 @@ impl<'a> Iterator for TokenIterator<'a> {
                 ')' => return Some(Token::RParen),
                 '[' => return Some(Token::LSquare),
                 ']' => return Some(Token::RSquare),
-                '+' => return Some(Token::Plus),
-                '-' => return Some(Token::Minus),
+                '+' => {
+                    if self.last.is_next_unary() { return Some(Token::UnaryPlus) }
+                    else { return Some(Token::Plus) }
+                }
+                '-' => {
+                    if self.last.is_next_unary() { return Some(Token::UnaryMinus) }
+                    else { return Some(Token::Minus) }
+                }
                 '*' => return Some(Token::Multiply),
                 '/' => {
                     match self.char_stream.peek() {
@@ -450,8 +540,21 @@ impl<'a> Iterator for TokenIterator<'a> {
     }
 }
 
+impl<'a> Iterator for TokenIterator<'a> {
+    type Item = Token;
+
+    // TODO - perhaps this could be optimized to only keep track of last for operators?
+    fn next(&mut self) -> Option<Self::Item> {
+        self.last = match self.inner_next() {
+            Some(c) => c,
+            None => return None,
+        };
+        Some(self.last.clone())
+    }
+}
+
 pub fn lex(input: &str) -> TokenIterator {
-    TokenIterator { char_stream: input.chars().peekable() }
+    TokenIterator { last: Token::LexErr(LexError::Nothing), char_stream: input.chars().peekable() }
 }
 
 fn get_precedence(token: &Token) -> i32 {
@@ -599,6 +702,20 @@ fn parse_primary<'a>(input: &mut Peekable<TokenIterator<'a>>) -> Result<Expr, Pa
     }
 }
 
+fn parse_unary<'a>(input: &mut Peekable<TokenIterator<'a>>) -> Result<Expr, ParseError> {
+    let tok = match input.peek() {
+        Some(tok) => tok.clone(),
+        None => return Err(ParseError::InputPastEndOfFile),
+    };
+    
+    match tok {
+        Token::UnaryMinus => { input.next(); Ok(Expr::FnCall("-".to_string(), vec![parse_primary(input)?])) }
+        Token::UnaryPlus => { input.next(); parse_primary(input) }
+        Token::Bang => { input.next(); Ok(Expr::FnCall("!".to_string(), vec![parse_primary(input)?])) }
+        _ => parse_primary(input)
+    }
+}
+
 fn parse_binop<'a>(input: &mut Peekable<TokenIterator<'a>>,
                    prec: i32,
                    lhs: Expr)
@@ -617,7 +734,7 @@ fn parse_binop<'a>(input: &mut Peekable<TokenIterator<'a>>,
         }
 
         if let Some(op_token) = input.next() {
-            let mut rhs = try!(parse_primary(input));
+            let mut rhs = try!(parse_unary(input));
 
             let mut next_prec = -1;
 
@@ -658,7 +775,7 @@ fn parse_binop<'a>(input: &mut Peekable<TokenIterator<'a>>,
 }
 
 fn parse_expr<'a>(input: &mut Peekable<TokenIterator<'a>>) -> Result<Expr, ParseError> {
-    let lhs = try!(parse_primary(input));
+    let lhs = try!(parse_unary(input));
 
     parse_binop(input, 0, lhs)
 }
