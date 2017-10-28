@@ -1153,6 +1153,19 @@ impl Engine {
                     }
                 }
             }
+            Stmt::Loop(ref body) => {
+                loop {
+                    match self.eval_stmt(scope, body) {
+                        Err(EvalAltResult::LoopBreak) => {
+                            return Ok(Box::new(()));
+                        }
+                        Err(x) => {
+                            return Err(x);
+                        }
+                        _ => (),
+                    }
+                }
+            }
             Stmt::Break => Err(EvalAltResult::LoopBreak),
             Stmt::Return => Err(EvalAltResult::Return(Box::new(()))),
             Stmt::ReturnWithVal(ref a) => {

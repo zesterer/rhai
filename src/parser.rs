@@ -90,6 +90,7 @@ pub enum Stmt {
     If(Box<Expr>, Box<Stmt>),
     IfElse(Box<Expr>, Box<Stmt>, Box<Stmt>),
     While(Box<Expr>, Box<Stmt>),
+    Loop(Box<Stmt>),
     Var(String, Option<Box<Expr>>),
     Block(Vec<Stmt>),
     Expr(Box<Expr>),
@@ -142,6 +143,7 @@ pub enum Token {
     If,
     Else,
     While,
+    Loop,
     LessThan,
     GreaterThan,
     Bang,
@@ -398,6 +400,7 @@ impl<'a> TokenIterator<'a> {
                         "if" => return Some(Token::If),
                         "else" => return Some(Token::Else),
                         "while" => return Some(Token::While),
+                        "loop" => return Some(Token::Loop),
                         "break" => return Some(Token::Break),
                         "return" => return Some(Token::Return),
                         "fn" => return Some(Token::Fn),
@@ -805,6 +808,14 @@ fn parse_while<'a>(input: &mut Peekable<TokenIterator<'a>>) -> Result<Stmt, Pars
     Ok(Stmt::While(Box::new(guard), Box::new(body)))
 }
 
+fn parse_loop<'a>(input: &mut Peekable<TokenIterator<'a>>) -> Result<Stmt, ParseError> {
+    input.next();
+
+    let body = try!(parse_block(input));
+
+    Ok(Stmt::Loop(Box::new(body)))
+}
+
 fn parse_var<'a>(input: &mut Peekable<TokenIterator<'a>>) -> Result<Stmt, ParseError> {
     input.next();
 
@@ -868,6 +879,7 @@ fn parse_stmt<'a>(input: &mut Peekable<TokenIterator<'a>>) -> Result<Stmt, Parse
     match input.peek() {
         Some(&Token::If) => parse_if(input),
         Some(&Token::While) => parse_while(input),
+        Some(&Token::Loop) => parse_loop(input),
         Some(&Token::Break) => {
             input.next();
             Ok(Stmt::Break)
