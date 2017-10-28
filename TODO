@@ -1,7 +1,5 @@
 pre 1.0:
-	- loop
 	- binary ops
-	- bool ops
 	- basic threads
 	- stdlib
 	- floats
