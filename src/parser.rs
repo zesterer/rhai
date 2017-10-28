@@ -23,10 +23,6 @@ impl Error for LexError {
             LexError::Nothing => "This error is for internal use only"
         }
     }
-
-    fn cause(&self) -> Option<&Error> {
-        None
-    }
 }
 
 impl fmt::Display for LexError {
