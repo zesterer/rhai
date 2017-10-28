@@ -353,7 +353,36 @@ impl<'a> Iterator for TokenIterator<'a> {
                 '+' => return Some(Token::Plus),
                 '-' => return Some(Token::Minus),
                 '*' => return Some(Token::Multiply),
-                '/' => return Some(Token::Divide),
+                '/' => {
+                    match self.char_stream.peek() {
+                        Some(&'/') => {
+                            self.char_stream.next();
+                            while let Some(c) = self.char_stream.next() {
+                                if c == '\n' { break; }
+                            }
+                        }
+                        Some(&'*') => {
+                            let mut level = 1;
+                            self.char_stream.next();
+                            while let Some(c) = self.char_stream.next() {
+                                match c {
+                                    '/' => if let Some('*') = self.char_stream.next() {
+                                        level+=1;
+                                    }
+                                    '*' => if let Some('/') = self.char_stream.next() {
+                                        level-=1;
+                                    }
+                                    _ => (),
+                                }
+
+                                if level == 0 {
+                                    break;
+                                }
+                            }
+                        }
+                        _ => return Some(Token::Divide),
+                    }
+                }
                 ';' => return Some(Token::Semicolon),
                 ':' => return Some(Token::Colon),
                 ',' => return Some(Token::Comma),
