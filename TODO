@@ -1,11 +1,9 @@
 pre 1.0:
 	- loop
 	- binary ops
-	- unary minus and negation
 	- bool ops
 	- basic threads
 	- stdlib
-	- comments
 	- floats
 	- REPL (consume functions)
 1.0:
