@@ -99,6 +99,7 @@ pub enum Stmt {
 #[derive(Debug, Clone)]
 pub enum Expr {
     IntConst(i64),
+    FloatConst(f64),
     Identifier(String),
     CharConst(char),
     StringConst(String),
@@ -114,6 +115,7 @@ pub enum Expr {
 #[derive(Debug)]
 pub enum Token {
     IntConst(i64),
+    FloatConst(f64),
     Identifier(String),
     CharConst(char),
     StringConst(String),
@@ -306,7 +308,6 @@ impl<'a> Iterator for TokenIterator<'a> {
                     }
 
                     let out: String = result.iter().cloned().collect();
-
                     match out.as_ref() {
                         "true" => return Some(Token::True),
                         "false" => return Some(Token::False),
@@ -317,7 +318,18 @@ impl<'a> Iterator for TokenIterator<'a> {
                         "break" => return Some(Token::Break),
                         "return" => return Some(Token::Return),
                         "fn" => return Some(Token::Fn),
-                        x => return Some(Token::Identifier(x.to_string()))
+                        x => {
+                            match out.starts_with("f") {
+                                false => return Some(Token::Identifier(x.to_string())),
+                                true => {
+                                    if let Ok(f) = (&out[1..]).to_owned().replace("_", ".").parse::<f64>() {
+                                        return Some(Token::FloatConst(f));
+                                    } else {
+                                        return Some(Token::Identifier(x.to_string()));
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 '"' => {
@@ -458,7 +470,7 @@ fn parse_call_expr<'a>(id: String,
                        input: &mut Peekable<TokenIterator<'a>>)
                        -> Result<Expr, ParseError> {
     let mut args = Vec::new();
- 
+
     if let Some(&Token::RParen) = input.peek() {
         input.next();
         return Ok(Expr::FnCall(id, args));
@@ -549,6 +561,7 @@ fn parse_primary<'a>(input: &mut Peekable<TokenIterator<'a>>) -> Result<Expr, Pa
     if let Some(token) = input.next() {
         match token {
             Token::IntConst(ref x) => Ok(Expr::IntConst(*x)),
+            Token::FloatConst(ref x) => Ok(Expr::FloatConst(*x)),
             Token::StringConst(ref s) => Ok(Expr::StringConst(s.clone())),
             Token::CharConst(ref c) => Ok(Expr::CharConst(*c)),
             Token::Identifier(ref s) => parse_ident_expr(s.clone(), input),
