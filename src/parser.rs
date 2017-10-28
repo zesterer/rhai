@@ -191,6 +191,8 @@ impl Token {
             Or               |
             Ampersand        |
             And              |
+            If               |
+            While            |
             Return => true,
             _ => false,
         }
