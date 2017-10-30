@@ -27,9 +27,8 @@
 //! # // Very ugly hack incoming, TODO
 //! # use std::fs::{File, remove_file};
 //! # use std::io::Write;
-//! # use std::mem::drop;
 //! # let mut f = File::create("my_script.rhai").unwrap();
-//! # write!(f, "{}", "fn f(x) { if x == 1 { return 1; } x * f(x-1) } compute_something(f(10))");
+//! # let _ = write!(f, "{}", "fn f(x) { if x == 1 { return 1; } x * f(x-1) } compute_something(f(10))");
 //! assert!(engine.eval_file::<bool>("my_script.rhai").unwrap());
 //! # let _ = remove_file("my_script.rhai");
 //! ```
