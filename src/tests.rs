@@ -403,6 +403,62 @@ fn test_array_with_structs() {
 }
 
 #[test]
+fn test_comments() {
+	let mut engine = Engine::new();
+
+	assert!(engine.eval::<i64>("let x = 5; x // I am a single line comment, yay!").is_ok());
+
+	assert!(engine.eval::<i64>("let /* I am a multiline comment, yay! */ x = 5; x").is_ok());
+}
+
+#[test]
+fn test_unary_minus() {
+	let mut engine = Engine::new();
+
+	assert_eq!(engine.eval::<i64>("let x = -5; x").unwrap(), -5);
+
+	assert_eq!(engine.eval::<i64>("fn n(x) { -x } n(5)").unwrap(), -5);
+
+	assert_eq!(engine.eval::<i64>("5 - -(-5)").unwrap(), 0);
+}
+
+#[test]
+fn test_not() {
+	let mut engine = Engine::new();
+
+	assert_eq!(engine.eval::<bool>("let not_true = !true; not_true").unwrap(), false);
+
+	assert_eq!(engine.eval::<bool>("fn not(x) { !x } not(false)").unwrap(), true);
+
+	// TODO - do we allow stacking unary operators directly? e.g '!!!!!!!true'
+	assert_eq!(engine.eval::<bool>("!(!(!(!(true))))").unwrap(), true)
+}
+
+#[test]
+fn test_loop() {
+	let mut engine = Engine::new();
+
+	assert!(
+		engine.eval::<bool>("
+			let x = 0;
+			let i = 0;
+
+			loop {
+				if i < 10 {
+					x = x + i;
+					i = i + 1;
+				}
+				else {
+					break;
+				}
+			}
+
+			x == 45
+		").unwrap()
+	)
+}
+
+#[test]
 fn test_increment() {
     let mut engine = Engine::new();
 
