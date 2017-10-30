@@ -152,6 +152,8 @@ pub enum Token {
     Fn,
     Break,
     Return,
+    PlusEquals,
+    MinusEquals,
     LexErr(LexError),
 }
 
@@ -350,8 +352,24 @@ impl<'a> Iterator for TokenIterator<'a> {
                 ')' => return Some(Token::RParen),
                 '[' => return Some(Token::LSquare),
                 ']' => return Some(Token::RSquare),
-                '+' => return Some(Token::Plus),
-                '-' => return Some(Token::Minus),
+                '+' => {
+                    return match self.char_stream.peek() {
+                        Some(&'=') => {
+                            self.char_stream.next();
+                            Some(Token::PlusEquals)
+                        },
+                        _ => Some(Token::Plus)
+                    }
+                },
+                '-' => {
+                    return match self.char_stream.peek() {
+                        Some(&'=') => {
+                            self.char_stream.next();
+                            Some(Token::MinusEquals)
+                        },
+                        _ => Some(Token::Minus)
+                    }
+                },
                 '*' => return Some(Token::Multiply),
                 '/' => return Some(Token::Divide),
                 ';' => return Some(Token::Semicolon),
@@ -427,7 +445,9 @@ pub fn lex(input: &str) -> TokenIterator {
 
 fn get_precedence(token: &Token) -> i32 {
     match *token {
-        Token::Equals => 10,
+        Token::Equals
+        | Token::PlusEquals
+        | Token::MinusEquals => 10,
         Token::Or => 11,
         Token::And => 12,
         Token::LessThan
@@ -458,7 +478,7 @@ fn parse_call_expr<'a>(id: String,
                        input: &mut Peekable<TokenIterator<'a>>)
                        -> Result<Expr, ParseError> {
     let mut args = Vec::new();
- 
+
     if let Some(&Token::RParen) = input.peek() {
         input.next();
         return Ok(Expr::FnCall(id, args));
@@ -609,6 +629,20 @@ fn parse_binop<'a>(input: &mut Peekable<TokenIterator<'a>>,
                 Token::Multiply => Expr::FnCall("*".to_string(), vec![lhs_curr, rhs]),
                 Token::Divide => Expr::FnCall("/".to_string(), vec![lhs_curr, rhs]),
                 Token::Equals => Expr::Assignment(Box::new(lhs_curr), Box::new(rhs)),
+                Token::PlusEquals  => {
+                    let lhs_copy = lhs_curr.clone();
+                    Expr::Assignment(
+                        Box::new(lhs_curr),
+                        Box::new(Expr::FnCall("+".to_string(), vec![lhs_copy, rhs]))
+                    )
+                },
+                Token::MinusEquals  => {
+                    let lhs_copy = lhs_curr.clone();
+                    Expr::Assignment(
+                        Box::new(lhs_curr),
+                        Box::new(Expr::FnCall("-".to_string(), vec![lhs_copy, rhs]))
+                    )
+                },
                 Token::Period => Expr::Dot(Box::new(lhs_curr), Box::new(rhs)),
                 Token::EqualTo => Expr::FnCall("==".to_string(), vec![lhs_curr, rhs]),
                 Token::NotEqualTo => Expr::FnCall("!=".to_string(), vec![lhs_curr, rhs]),
