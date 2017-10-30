@@ -8,7 +8,7 @@ use parser::{lex, parse, Expr, Stmt, FnDef};
 use fn_register::FnRegister;
 
 use std::ops::{Add, Sub, Mul, Div, Neg};
-use std::cmp::{Ord, Eq};
+use std::cmp::{PartialOrd, PartialEq};
 
 #[derive(Debug)]
 pub enum EvalAltResult {
@@ -96,10 +96,10 @@ pub enum FnType {
 /// ```rust
 /// extern crate rhai;
 /// use rhai::Engine;
-/// 
+///
 /// fn main() {
 ///     let mut engine = Engine::new();
-/// 
+///
 ///     if let Ok(result) = engine.eval::<i64>("40 + 2") {
 ///         println!("Answer: {}", result);  // prints 42
 ///     }
@@ -114,10 +114,10 @@ pub struct Engine {
 ///
 /// ```rust
 /// use rhai::{Engine, Scope};
-/// 
+///
 /// let mut engine = Engine::new();
 /// let mut my_scope = Scope::new();
-/// 
+///
 /// assert!(engine.eval_with_scope::<()>(&mut my_scope, "let x = 5;").is_ok());
 /// assert_eq!(engine.eval_with_scope::<i64>(&mut my_scope, "x + 1").unwrap(), 6);
 /// ```
@@ -948,6 +948,7 @@ impl Engine {
     fn eval_expr(&self, scope: &mut Scope, expr: &Expr) -> Result<Box<Any>, EvalAltResult> {
         match *expr {
             Expr::IntConst(i) => Ok(Box::new(i)),
+            Expr::FloatConst(i) => Ok(Box::new(i)),
             Expr::StringConst(ref s) => Ok(Box::new(s.clone())),
             Expr::CharConst(ref c) => Ok(Box::new(*c)),
             Expr::Identifier(ref id) => {
@@ -1400,12 +1401,12 @@ impl Engine {
         fn mul<T: Mul>(x: T, y: T) -> <T as Mul>::Output { x * y }
         fn div<T: Div>(x: T, y: T) -> <T as Div>::Output { x / y }
         fn neg<T: Neg>(x: T) -> <T as Neg>::Output { -x }
-        fn lt<T: Ord>(x: T, y: T)  -> bool { x < y  }
-        fn lte<T: Ord>(x: T, y: T) -> bool { x <= y }
-        fn gt<T: Ord>(x: T, y: T)  -> bool { x > y  }
-        fn gte<T: Ord>(x: T, y: T) -> bool { x >= y }
-        fn eq<T: Eq>(x: T, y: T)   -> bool { x == y }
-        fn ne<T: Eq>(x: T, y: T)   -> bool { x != y }
+        fn lt<T: PartialOrd>(x: T, y: T)  -> bool { x < y  }
+        fn lte<T: PartialOrd>(x: T, y: T) -> bool { x <= y }
+        fn gt<T: PartialOrd>(x: T, y: T)  -> bool { x > y  }
+        fn gte<T: PartialOrd>(x: T, y: T) -> bool { x >= y }
+        fn eq<T: PartialEq>(x: T, y: T)   -> bool { x == y }
+        fn ne<T: PartialEq>(x: T, y: T)   -> bool { x != y }
         fn and(x: bool, y: bool)   -> bool { x && y }
         fn or(x: bool, y: bool)    -> bool { x || y }
         fn not(x: bool)            -> bool { !x }
@@ -1416,12 +1417,12 @@ impl Engine {
         reg_op!(engine, "*", mul, i32, i64, u32, u64, f32, f64);
         reg_op!(engine, "/", div, i32, i64, u32, u64, f32, f64);
 
-        reg_cmp!(engine, "<", lt, i32, i64, u32, u64, String);
-        reg_cmp!(engine, "<=", lte, i32, i64, u32, u64, String);
-        reg_cmp!(engine, ">", gt, i32, i64, u32, u64, String);
-        reg_cmp!(engine, ">=", gte, i32, i64, u32, u64, String);
-        reg_cmp!(engine, "==", eq, i32, i64, u32, u64, bool, String);
-        reg_cmp!(engine, "!=", ne, i32, i64, u32, u64, bool, String);
+        reg_cmp!(engine, "<", lt, i32, i64, u32, u64, String, f64);
+        reg_cmp!(engine, "<=", lte, i32, i64, u32, u64, String, f64);
+        reg_cmp!(engine, ">", gt, i32, i64, u32, u64, String, f64);
+        reg_cmp!(engine, ">=", gte, i32, i64, u32, u64, String, f64);
+        reg_cmp!(engine, "==", eq, i32, i64, u32, u64, bool, String, f64);
+        reg_cmp!(engine, "!=", ne, i32, i64, u32, u64, bool, String, f64);
 
         reg_op!(engine, "||", or, bool);
         reg_op!(engine, "&&", and, bool);
