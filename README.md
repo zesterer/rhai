@@ -37,10 +37,34 @@ The repository contains several examples in the `examples` folder:
 - `reuse_scope` evaluates two pieces of code in separate runs, but using a common scope
 - `rhai_runner` runs each filename passed to it as a Rhai script
 - `simple_fn` shows how to register a Rust function to a Rhai engine
+- `repl` a simple REPL, see source code for what it can do at the moment
 
 Examples can be run with the following command:
 ```bash
 cargo run --example name
+```
+
+## Example Scripts
+We also have a few examples scripts that showcase Rhai's features, all stored in the `scripts` folder:
+- `array.rhai` - arrays in Rhai
+- `assignment.rhai` - variable declarations
+- `comments.rhai` - just comments
+- `function_decl1.rhai` - a function without parameters
+- `function_decl2.rhai` - a function with two parameters
+- `function_decl3.rhai` - a function with many parameters
+- `if1.rhai` - if example
+- `loop.rhai` - endless loop in Rhai, this example emulates a do..while cycle
+- `op1.rhai` - just a simple addition
+- `op2.rhai` - simple addition and multiplication
+- `op3.rhai` - change evaluation order with parenthesis
+- `speed_test.rhai` - a simple program to measure the speed of Rhai's interpreter
+- `string.rhai`- string operations
+- `while.rhai` - while loop
+
+To run the scripts, you can either make your own tiny program, or make use of the `rhai_runner`
+example program:
+```bash
+cargo run --example rhai_runner scripts/any_script.rhai
 ```
 
 # Hello world
@@ -289,6 +313,17 @@ while x > 0 {
 }
 ```
 
+## Loop
+```rust
+let x = 10;
+
+loop {
+    print(x);
+    x = x - 1;
+	if x == 0 { break; }
+}
+```
+
 ## Functions
 
 Rhai supports defining functions in script:
@@ -336,3 +371,18 @@ let name = "Bob";
 let middle_initial = 'C';
 ```
 
+## Comments
+
+```rust
+let /* intruder comment */ name = "Bob";
+// This is a very important comment
+/* This comment spans
+   multiple lines, so it
+   only makes sense that
+   it is even more important */
+
+/* Fear not, Rhai satisfies all your nesting
+   needs with nested comments:
+   /*/*/*/*/**/*/*/*/*/
+*/
+```
