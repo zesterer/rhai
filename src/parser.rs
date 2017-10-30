@@ -282,6 +282,19 @@ impl<'a> Iterator for TokenIterator<'a> {
                                 result.push(nxt);
                                 self.char_stream.next();
                             }
+                            '.' => {
+                                result.push(nxt);
+                                self.char_stream.next();
+                                while let Some(&nxt_float) = self.char_stream.peek() {
+                                    match nxt_float {
+                                        '0'...'9' => {
+                                            result.push(nxt_float);
+                                            self.char_stream.next();
+                                        }
+                                        _ => break,
+                                    }
+                                }
+                            }
                             _ => break,
                         }
                     }
@@ -290,6 +303,8 @@ impl<'a> Iterator for TokenIterator<'a> {
 
                     if let Ok(val) = out.parse::<i64>() {
                         return Some(Token::IntConst(val));
+                    } else if let Ok(val) = out.parse::<f64>() {
+                        return Some(Token::FloatConst(val));
                     }
                     return Some(Token::LexErr(LexError::MalformedNumber));
                 }
@@ -318,18 +333,7 @@ impl<'a> Iterator for TokenIterator<'a> {
                         "break" => return Some(Token::Break),
                         "return" => return Some(Token::Return),
                         "fn" => return Some(Token::Fn),
-                        x => {
-                            match out.starts_with("f") {
-                                false => return Some(Token::Identifier(x.to_string())),
-                                true => {
-                                    if let Ok(f) = (&out[1..]).to_owned().replace("_", ".").parse::<f64>() {
-                                        return Some(Token::FloatConst(f));
-                                    } else {
-                                        return Some(Token::Identifier(x.to_string()));
-                                    }
-                                }
-                            }
-                        }
+                        x => return Some(Token::Identifier(x.to_string())),
                     }
                 }
                 '"' => {

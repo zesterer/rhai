@@ -406,19 +406,19 @@ fn test_array_with_structs() {
 fn test_float() {
     let mut engine = Engine::new();
 
-    if let Ok(result) = engine.eval::<bool>("let x = f0_0; let y = f1_0; x < y") {
+    if let Ok(result) = engine.eval::<bool>("let x = 0.0; let y = 1.0; x < y") {
         assert!(result);
     } else {
         assert!(false);
     }
 
-    if let Ok(result) = engine.eval::<bool>("let x = f0_0; let y = f1_0; x > y") {
+    if let Ok(result) = engine.eval::<bool>("let x = 0.0; let y = 1.0; x > y") {
         assert!(!result);
     } else {
         assert!(false);
     }
 
-    if let Ok(result) = engine.eval::<f64>("let x = f9_9999; x") {
+    if let Ok(result) = engine.eval::<f64>("let x = 9.9999; x") {
         assert_eq!(result, 9.9999);
     } else {
         assert!(false);
@@ -464,7 +464,7 @@ fn struct_with_float() {
         assert!(false);
     }
 
-    if let Ok(result) = engine.eval::<f64>("let ts = new_ts(); ts.x = f10_1001; ts.x") {
+    if let Ok(result) = engine.eval::<f64>("let ts = new_ts(); ts.x = 10.1001; ts.x") {
         assert_eq!(result, 10.1001);
     } else {
         assert!(false);
