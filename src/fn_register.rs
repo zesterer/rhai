@@ -3,7 +3,10 @@ use std::boxed::Box;
 
 use engine::{EvalAltResult, Engine, FnType};
 
+/// A trait used for registering functions to an Engine
+/// Currently, Rhai supports functions with up to 6 parameters
 pub trait FnRegister<A, RetVal, Args> {
+	/// A method used for registering functions and methods to a Engine
     fn register_fn(&mut self, name: &str, f: A);
 }
 

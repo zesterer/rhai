@@ -12,7 +12,7 @@ Rhai's current feature set:
 * No additional dependencies
 * No unsafe code
 
-**Note:** Currently, it's version 0.5.1, so the language and APIs may change before they stabilize.*
+**Note:** Currently, it's version 0.6.2, so the language and APIs may change before they stabilize.*
 
 ## Installation
 
@@ -20,7 +20,7 @@ You can install Rhai using crates by adding this line to your dependences:
 
 ```
 [dependencies]
-rhai = "0.5.1"
+rhai = "0.6.2"
 ```
 
 ## Related

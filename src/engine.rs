@@ -106,6 +106,7 @@ pub enum FnType {
 /// }
 /// ```
 pub struct Engine {
+    /// A hashmap containing all functions know to the engine
     pub fns: HashMap<String, Vec<FnType>>,
 }
 
