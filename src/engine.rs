@@ -7,7 +7,7 @@ use std::fmt;
 use parser::{lex, parse, Expr, Stmt, FnDef};
 use fn_register::FnRegister;
 
-use std::ops::{Add, Sub, Mul, Div, Neg};
+use std::ops::{Add, Sub, Mul, Div, Neg, BitAnd, BitOr, BitXor, Shl, Shr};
 use std::cmp::{PartialOrd, PartialEq};
 
 #[derive(Debug)]
@@ -1411,6 +1411,11 @@ impl Engine {
         fn or(x: bool, y: bool)    -> bool { x || y }
         fn not(x: bool)            -> bool { !x }
         fn concat(x: String, y: String) -> String { x + &y }
+        fn binary_and<T: BitAnd>(x: T, y: T)   -> <T as BitAnd>::Output { x & y }
+        fn binary_or<T: BitOr>(x: T, y: T)   -> <T as BitOr>::Output { x | y }
+        fn binary_xor<T: BitXor>(x: T, y: T)   -> <T as BitXor>::Output { x ^ y }
+        fn left_shift<T: Shl<T>>(x: T, y: T)   -> <T as Shl<T>>::Output { x.shl(y) }
+        fn right_shift<T: Shr<T>>(x: T, y: T)   -> <T as Shr<T>>::Output { x.shr(y) }
 
         reg_op!(engine, "+", add, i32, i64, u32, u64, f32, f64);
         reg_op!(engine, "-", sub, i32, i64, u32, u64, f32, f64);
@@ -1426,6 +1431,13 @@ impl Engine {
 
         reg_op!(engine, "||", or, bool);
         reg_op!(engine, "&&", and, bool);
+        reg_op!(engine, "|", binary_or, i32, i64, u32, u64);
+        reg_op!(engine, "|", or, bool);
+        reg_op!(engine, "&", binary_and, i32, i64, u32, u64);
+        reg_op!(engine, "&", and, bool);
+        reg_op!(engine, "^", binary_xor, i32, i64, u32, u64);
+        reg_op!(engine, "<<", left_shift, i32, i64, u32, u64);
+        reg_op!(engine, ">>", right_shift, i32, i64, u32, u64);
 
         reg_un!(engine, "-", neg, i32, i64, f32, f64);
         reg_un!(engine, "!", not, bool);
