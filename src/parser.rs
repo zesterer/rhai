@@ -372,6 +372,7 @@ impl<'a> TokenIterator<'a> {
             match c {
                 '0'...'9' => {
                     let mut result = Vec::new();
+                    let mut radix_base: Option<u32> = None;
                     result.push(c);
 
                     while let Some(&nxt) = self.char_stream.peek() {
@@ -393,7 +394,56 @@ impl<'a> TokenIterator<'a> {
                                     }
                                 }
                             }
+                            'x' | 'X' => {
+                                result.push(nxt);
+                                self.char_stream.next();
+                                while let Some(&nxt_hex) = self.char_stream.peek() {
+                                    match nxt_hex {
+                                        '0'...'9' | 'a'...'f' | 'A'...'F' => {
+                                            result.push(nxt_hex);
+                                            self.char_stream.next();
+                                        }
+                                        _ => break,
+                                    }
+                                }
+                                radix_base = Some(16);
+                            }
+                            'o' | 'O' => {
+                                result.push(nxt);
+                                self.char_stream.next();
+                                while let Some(&nxt_oct) = self.char_stream.peek() {
+                                    match nxt_oct {
+                                        '0'...'8' => {
+                                            result.push(nxt_oct);
+                                            self.char_stream.next();
+                                        }
+                                        _ => break,
+                                    }
+                                }
+                                radix_base = Some(8);
+                            }
+                            'b' | 'B' => {
+                                result.push(nxt);
+                                self.char_stream.next();
+                                while let Some(&nxt_bin) = self.char_stream.peek() {
+                                    match nxt_bin {
+                                        '0' | '1' | '_' => {
+                                            result.push(nxt_bin);
+                                            self.char_stream.next();
+                                        }
+                                        _ => break,
+                                    }
+                                }
+                                radix_base = Some(2);
+                            }
                             _ => break,
+                        }
+                    }
+
+                    if let Some(radix) = radix_base {
+                        let out: String = result.iter().cloned().skip(2).filter(|c| c != &'_').collect();
+                        if let Ok(val) = i64::from_str_radix(&out, radix) {
+                            return Some(Token::IntConst(val));
                         }
                     }
 
