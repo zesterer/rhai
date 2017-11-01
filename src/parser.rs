@@ -209,6 +209,20 @@ impl Token {
             And              |
             If               |
             While            |
+            PlusEquals       |
+            MinusEquals      |
+            MultiplyEquals   |
+            DivideEquals     |
+            LeftShiftEquals  |
+            RightShiftEquals |
+            AndEquals        |
+            OrEquals         |
+            XOrEquals        |
+            LeftShift        |
+            RightShift       |
+            XOr              |
+            Modulo           |
+            ModuloEquals     |
             Return => true,
             _ => false,
         }
