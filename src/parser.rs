@@ -370,6 +370,7 @@ impl<'a> TokenIterator<'a> {
             match c {
                 '0'...'9' => {
                     let mut result = Vec::new();
+                    let mut radix_base: Option<u32> = None;
                     result.push(c);
 
                     while let Some(&nxt) = self.char_stream.peek() {
@@ -403,10 +404,7 @@ impl<'a> TokenIterator<'a> {
                                         _ => break,
                                     }
                                 }
-                                let out: String = result.iter().cloned().skip(2).collect();
-                                if let Ok(val) = i64::from_str_radix(&out, 16) {
-                                    return Some(Token::IntConst(val));
-                                }
+                                radix_base = Some(16);
                             }
                             'o' | 'O' => {
                                 result.push(nxt);
@@ -420,10 +418,7 @@ impl<'a> TokenIterator<'a> {
                                         _ => break,
                                     }
                                 }
-                                let out: String = result.iter().cloned().skip(2).collect();
-                                if let Ok(val) = i64::from_str_radix(&out, 8) {
-                                    return Some(Token::IntConst(val));
-                                }
+                                radix_base = Some(8);
                             }
                             'b' | 'B' => {
                                 result.push(nxt);
@@ -437,12 +432,16 @@ impl<'a> TokenIterator<'a> {
                                         _ => break,
                                     }
                                 }
-                                let out: String = result.iter().cloned().skip(2).filter(|c| c != &'_').collect();
-                                if let Ok(val) = i64::from_str_radix(&out, 2) {
-                                    return Some(Token::IntConst(val));
-                                }
+                                radix_base = Some(2);
                             }
                             _ => break,
+                        }
+                    }
+
+                    if let Some(radix) = radix_base {
+                        let out: String = result.iter().cloned().skip(2).filter(|c| c != &'_').collect();
+                        if let Ok(val) = i64::from_str_radix(&out, radix) {
+                            return Some(Token::IntConst(val));
                         }
                     }
 
