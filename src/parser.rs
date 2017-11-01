@@ -168,6 +168,8 @@ pub enum Token {
     LeftShift,
     RightShift,
     XOr,
+    Modulo,
+    ModuloEquals,
     LexErr(LexError),
 }
 
@@ -676,6 +678,15 @@ impl<'a> TokenIterator<'a> {
                         }
                         _ => return Some(Token::XOr)
                     }
+                },
+                '%' => {
+                    match self.char_stream.peek() {
+                        Some(&'=') => {
+                            self.char_stream.next();
+                            return Some(Token::ModuloEquals);
+                        }
+                        _ => return Some(Token::Modulo)
+                    }
                 }
                 _x if _x.is_whitespace() => (),
                 _ => return Some(Token::LexErr(LexError::UnexpectedChar)),
@@ -714,11 +725,13 @@ fn get_precedence(token: &Token) -> i32 {
         | Token::RightShiftEquals
         | Token::AndEquals
         | Token::OrEquals
-        | Token::XOrEquals => 10,
+        | Token::XOrEquals
+        | Token::ModuloEquals => 10,
         Token::Or
         | Token::XOr
         | Token::Pipe  => 11,
-        Token::And => 12,
+        Token::And
+        | Token::Ampersand => 12,
         Token::LessThan
         | Token::LessThanEqual
         | Token::GreaterThan
@@ -731,6 +744,7 @@ fn get_precedence(token: &Token) -> i32 {
         | Token::Multiply => 40,
         Token::LeftShift
         | Token::RightShift => 50,
+        Token::Modulo => 60,
         Token::Period => 100,
         _ => -1,
     }
@@ -997,6 +1011,15 @@ fn parse_binop<'a>(input: &mut Peekable<TokenIterator<'a>>,
                         Box::new(Expr::FnCall(">>".to_string(), vec![lhs_copy, rhs]))
                     )
                 },
+                Token::Ampersand => Expr::FnCall("&".to_string(), vec![lhs_curr, rhs]),
+                Token::Modulo => Expr::FnCall("%".to_string(), vec![lhs_curr, rhs]),
+                Token::ModuloEquals => {
+                    let lhs_copy = lhs_curr.clone();
+                    Expr::Assignment(
+                        Box::new(lhs_curr),
+                        Box::new(Expr::FnCall("%".to_string(), vec![lhs_copy, rhs]))
+                    )
+                }
                 _ => return Err(ParseError::UnknownOperator),
             };
         }

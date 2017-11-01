@@ -7,7 +7,7 @@ use std::fmt;
 use parser::{lex, parse, Expr, Stmt, FnDef};
 use fn_register::FnRegister;
 
-use std::ops::{Add, Sub, Mul, Div, Neg, BitAnd, BitOr, BitXor, Shl, Shr};
+use std::ops::{Add, Sub, Mul, Div, Neg, BitAnd, BitOr, BitXor, Shl, Shr, Rem};
 use std::cmp::{PartialOrd, PartialEq};
 
 #[derive(Debug)]
@@ -1417,6 +1417,7 @@ impl Engine {
         fn binary_xor<T: BitXor>(x: T, y: T)   -> <T as BitXor>::Output { x ^ y }
         fn left_shift<T: Shl<T>>(x: T, y: T)   -> <T as Shl<T>>::Output { x.shl(y) }
         fn right_shift<T: Shr<T>>(x: T, y: T)   -> <T as Shr<T>>::Output { x.shr(y) }
+        fn modulo<T: Rem<T>>(x: T, y: T)   -> <T as Rem<T>>::Output { x % y}
 
         reg_op!(engine, "+", add, i32, i64, u32, u64, f32, f64);
         reg_op!(engine, "-", sub, i32, i64, u32, u64, f32, f64);
@@ -1439,6 +1440,7 @@ impl Engine {
         reg_op!(engine, "^", binary_xor, i32, i64, u32, u64);
         reg_op!(engine, "<<", left_shift, i32, i64, u32, u64);
         reg_op!(engine, ">>", right_shift, i32, i64, u32, u64);
+        reg_op!(engine, "%", modulo, i32, i64, u32, u64);
 
         reg_un!(engine, "-", neg, i32, i64, f32, f64);
         reg_un!(engine, "!", not, bool);
