@@ -46,9 +46,9 @@ mod engine;
 mod fn_register;
 mod parser;
 
-#[cfg(test)]
-mod tests;
+//#[cfg(test)]
+//mod tests;
 
-pub use engine::{Engine, Scope};
+pub use engine::{Engine, Scope, EvalAltResult};
 pub use fn_register::FnRegister;
 
