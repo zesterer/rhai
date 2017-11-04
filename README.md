@@ -12,7 +12,7 @@ Rhai's current feature set:
 * No additional dependencies
 * No unsafe code
 
-**Note:** Currently, it's version 0.7.0, so the language and APIs may change before they stabilize.*
+**Note:** Currently, the version is 0.7.1, so the language and APIs may change before they stabilize.*
 
 ## Installation
 
@@ -20,7 +20,7 @@ You can install Rhai using crates by adding this line to your dependences:
 
 ```
 [dependencies]
-rhai = "0.7.0"
+rhai = "0.7.1"
 ```
 
 ## Related
@@ -71,7 +71,7 @@ cargo run --example rhai_runner scripts/any_script.rhai
 
 To get going with Rhai, you create an instance of the scripting engine and then run eval.
 
-```Rust
+```rust
 extern crate rhai;
 use rhai::Engine;
 
@@ -86,7 +86,7 @@ fn main() {
 
 You can also evaluate a script file:
 
-```Rust
+```rust
 if let Ok(result) = engine.eval_file::<i64>("hello_world.rhai") { ... }
 ```
 
@@ -94,7 +94,7 @@ if let Ok(result) = engine.eval_file::<i64>("hello_world.rhai") { ... }
 
 Rhai's scripting engine is very lightweight.  It gets its ability from the functions in your program.  To call these functions, you need to register them with the scripting engine.
 
-```Rust
+```rust
 extern crate rhai;
 use rhai::{Engine, FnRegister};
 
@@ -117,7 +117,7 @@ fn main() {
 
 Generic functions can be used in Rhai, but you'll need to register separate instances for each concrete type:
 
-```Rust
+```rust
 use std::fmt::Display;
 
 extern crate rhai;
@@ -142,7 +142,7 @@ You can also see in this example how you can register multiple functions (or in 
 
 Here's an more complete example of working with Rust.  First the example, then we'll break it into parts:
 
-```Rust
+```rust
 extern crate rhai;
 use rhai::{Engine, FnRegister};
 
@@ -177,7 +177,7 @@ fn main() {
 
 First, for each type we use with the engine, we need to be able to Clone.  This allows the engine to pass by value and still keep its own state.
 
-```Rust
+```rust
 #[derive(Clone)]
 struct TestStruct {
     x: i64
@@ -185,7 +185,7 @@ struct TestStruct {
 ```
 
 Next, we create a few methods that we'll later use in our scripts.  Notice that we register our custom type with the engine.
-```Rust
+```rust
 impl TestStruct {
     fn update(&mut self) {
         self.x += 1000;
@@ -205,13 +205,13 @@ To use methods and functions with the engine, we need to register them.  There a
 
 *Note: the engine follows the convention that methods use a &mut first parameter so that invoking methods can update the value in memory.*
 
-```Rust
+```rust
 engine.register_fn("update", TestStruct::update);
 engine.register_fn("new_ts", TestStruct::new);
 ```
 
 Finally, we call our script.  The script can see the function and method we registered earlier.  We need to get the result back out from script land just as before, this time casting to our custom struct type.
-```Rust
+```rust
 if let Ok(result) = engine.eval::<TestStruct>("let x = new_ts(); x.update(); x") {
     println!("result: {}", result.x); // prints 1001
 }
@@ -223,7 +223,7 @@ Similarly, you can work with members of your custom types.  This works by regist
 
 For example:
 
-```Rust
+```rust
 #[derive(Clone)]
 struct TestStruct {
     x: i64
@@ -261,7 +261,7 @@ By default, Rhai treats each engine invocation as a fresh one, persisting only t
 
 In this example, we thread the same state through multiple invocations:
 
-```Rust
+```rust
 extern crate rhai;
 use rhai::{Engine, Scope};
 
@@ -281,18 +281,18 @@ fn main() {
 
 ## Variables
 
-```Rust
+```rust
 let x = 3;
 ```
 
 ## Operators
 
-```Rust
+```rust
 let x = (1 + 2) * (6 - 4) / 2;
 ```
 
 ## If
-```Rust
+```rust
 if true {
     print("it's true!");
 }
@@ -302,7 +302,7 @@ else {
 ```
 
 ## While
-```Rust
+```rust
 let x = 10;
 while x > 0 {
     print(x);
@@ -328,7 +328,7 @@ loop {
 
 Rhai supports defining functions in script:
 
-```Rust
+```rust
 fn add(x, y) {
     return x + y;
 }
@@ -338,7 +338,7 @@ print(add(2, 3))
 
 Just like in Rust, you can also use an implicit return.
 
-```Rust
+```rust
 fn add(x, y) {
     x + y
 }
@@ -349,7 +349,7 @@ print(add(2, 3))
 
 You can create arrays of values, and then access them with numeric indices.
 
-```Rust
+```rust
 let y = [1, 2, 3];
 y[1] = 5;
 
@@ -358,7 +358,7 @@ print(y[1]);
 
 ## Members and methods
 
-```Rust
+```rust
 let a = new_ts();
 a.x = 500;
 a.update();
@@ -366,7 +366,7 @@ a.update();
 
 ## Strings and Chars
 
-```Rust
+```rust
 let name = "Bob";
 let middle_initial = 'C';
 ```
@@ -385,4 +385,34 @@ let /* intruder comment */ name = "Bob";
    needs with nested comments:
    /*/*/*/*/**/*/*/*/*/
 */
+```
+
+## Unary operators
+
+```rust
+let number = -5;
+number = -5 - +5;
+let booly = !true;
+```
+
+## Compount assignment operators
+
+```rust
+let number = 5;
+number += 4;
+number -= 3;
+number *= 2;
+number /= 1;
+number %= 3;
+number <<= 2;
+number >>= 1;
+```
+
+The `+=` operator can also be used to build strings:
+
+```rust
+let my_str = "abc";
+my_str += "ABC";
+
+my_str == "abcABC"
 ```
