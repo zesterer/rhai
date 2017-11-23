@@ -22,3 +22,6 @@ mod unary_after_binary;
 mod unary_minus;
 mod var_scope;
 mod while_loop;
+
+#[cfg(feature = "modules")]
+mod modules;
