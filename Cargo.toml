@@ -12,3 +12,8 @@ include = [
     "scripts/*.rhai",
     "Cargo.toml"
 ]
+
+
+[features]
+default = ["modules"]
+modules = []
