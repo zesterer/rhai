@@ -3,7 +3,7 @@
 //! that gives you a safe and easy way to add scripting to your applications.
 //! It provides a familiar syntax based on JS and Rust and a simple Rust interface.
 //! Here is a quick example. First, the contents of `my_script.rhai`:
-//! 
+//!
 //! ```rust_todo_disable_testing_enable_highlighting
 //! fn factorial(x) {
 //!     if x == 1 { return 1; }
@@ -12,16 +12,16 @@
 //!
 //! compute_something(factorial(10))
 //! ```
-//! 
+//!
 //! And the Rust part:
-//! 
+//!
 //! ```rust
 //! use rhai::{FnRegister, Engine};
-//! 
+//!
 //! fn compute_something(x: i64) -> bool {
 //!     (x % 40) == 0
 //! }
-//! 
+//!
 //! let mut engine = Engine::new();
 //! engine.register_fn("compute_something", compute_something);
 //! # // Very ugly hack incoming, TODO
@@ -40,7 +40,9 @@
         type_complexity,
         new_without_default_derive,
         needless_pass_by_value,
-        too_many_arguments)]
+        too_many_arguments,
+        new_without_default,
+        cyclomatic_complexity)]
 
 mod engine;
 mod fn_register;
