@@ -4,7 +4,7 @@ use std::iter::Peekable;
 use std::str::Chars;
 use std::char;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum LexError {
     UnexpectedChar,
     MalformedEscapeSequence,
@@ -43,6 +43,8 @@ pub enum ParseError {
     MalformedCallExpr,
     MalformedIndexExpr,
     VarExpectsIdentifier,
+    #[cfg(feature = "modules")]
+    UseExpectsPath,
     FnMissingName,
     FnMissingParams,
 }
@@ -59,7 +61,9 @@ impl Error for ParseError {
             ParseError::MissingRSquare => "Expected ']'",
             ParseError::MalformedCallExpr => "Call contains bad expression",
             ParseError::MalformedIndexExpr => "Indexing expression missing correct index",
-            ParseError::VarExpectsIdentifier => "'var' expects the name of a variable",
+            ParseError::VarExpectsIdentifier => "'let' expects the name of a variable",
+            #[cfg(feature = "modules")]
+            ParseError::UseExpectsPath => "'use' expects module path",
             ParseError::FnMissingName => "Function declaration is missing name",
             ParseError::FnMissingParams => "Function declaration is missing parameters",
         }
@@ -93,6 +97,9 @@ pub enum Stmt {
     Break,
     Return,
     ReturnWithVal(Box<Expr>),
+
+    #[cfg(feature = "modules")]
+    Use(String, String),
 }
 
 #[derive(Debug, Clone)]
@@ -109,9 +116,12 @@ pub enum Expr {
     Array(Vec<Expr>),
     True,
     False,
+
+    #[cfg(feature = "modules")]
+    Import(Vec<Expr>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     IntConst(i64),
     FloatConst(f64),
@@ -171,6 +181,11 @@ pub enum Token {
     Modulo,
     ModuloEquals,
     LexErr(LexError),
+
+    #[cfg(feature = "modules")]
+    Import,
+    #[cfg(feature = "modules")]
+    Use,
 }
 
 impl Token {
@@ -496,6 +511,28 @@ impl<'a> TokenIterator<'a> {
                         "break" => return Some(Token::Break),
                         "return" => return Some(Token::Return),
                         "fn" => return Some(Token::Fn),
+                        "import" => {
+                            #[cfg(feature = "modules")]
+                            {
+                                return Some(Token::Import);
+                            }
+                            #[cfg(not(feature = "modules"))]
+                            {
+                                println!("modules are currently disabled, you can-reenable them using \"modules\" feature");
+                                return None;
+                            }
+                        }
+                        "use" => {
+                            #[cfg(feature = "modules")]
+                            {
+                                return Some(Token::Use);
+                            }
+                            #[cfg(not(feature = "modules"))]
+                            {
+                                println!("modules are currently disabled, you can re-enable them using \"modules\" feature");
+                                return None;
+                            }
+                        }
                         x => return Some(Token::Identifier(x.to_string())),
                     }
                 }
@@ -900,6 +937,8 @@ fn parse_unary<'a>(input: &mut Peekable<TokenIterator<'a>>) -> Result<Expr, Pars
         Token::UnaryMinus => { input.next(); Ok(Expr::FnCall("-".to_string(), vec![parse_primary(input)?])) }
         Token::UnaryPlus => { input.next(); parse_primary(input) }
         Token::Bang => { input.next(); Ok(Expr::FnCall("!".to_string(), vec![parse_primary(input)?])) }
+        #[cfg(feature = "modules")]
+        Token::Import => { input.next(); Ok(Expr::Import(vec![parse_primary(input)?])) }
         _ => parse_primary(input)
     }
 }
@@ -1097,6 +1136,24 @@ fn parse_var<'a>(input: &mut Peekable<TokenIterator<'a>>) -> Result<Stmt, ParseE
     }
 }
 
+#[cfg(feature = "modules")]
+fn parse_use<'a>(input: &mut Peekable<TokenIterator<'a>>) -> Result<Stmt, ParseError> {
+    input.next();
+
+    let module = if let Some(Token::Identifier(ref s)) = input.next() {
+        s.clone()
+    } else { return Err(ParseError::UseExpectsPath) };
+
+    if input.next() != Some(Token::Colon) { return Err(ParseError::UseExpectsPath) };
+    if input.next() != Some(Token::Colon) { return Err(ParseError::UseExpectsPath) };
+
+    let symbol = if let Some(Token::Identifier(ref s)) = input.next() {
+        s.clone()
+    } else { return Err(ParseError::UseExpectsPath) };
+
+    Ok(Stmt::Use(module, symbol))
+}
+
 fn parse_block<'a>(input: &mut Peekable<TokenIterator<'a>>) -> Result<Stmt, ParseError> {
     match input.peek() {
         Some(&Token::LCurly) => (),
@@ -1159,6 +1216,8 @@ fn parse_stmt<'a>(input: &mut Peekable<TokenIterator<'a>>) -> Result<Stmt, Parse
         }
         Some(&Token::LCurly) => parse_block(input),
         Some(&Token::Var) => parse_var(input),
+        #[cfg(feature = "modules")]
+        Some(&Token::Use) => parse_use(input),
         _ => parse_expr_stmt(input),
     }
 }
