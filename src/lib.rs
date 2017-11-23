@@ -7,7 +7,7 @@
 //! ```rust_todo_disable_testing_enable_highlighting
 //! fn factorial(x) {
 //!     if x == 1 { return 1; }
-//!	    x * factorial(x - 1)
+//!     x * factorial(x - 1)
 //! }
 //!
 //! compute_something(factorial(10))
@@ -19,7 +19,7 @@
 //! use rhai::{FnRegister, Engine};
 //! 
 //! fn compute_something(x: i64) -> bool {
-//!	    (x % 40) == 0
+//!     (x % 40) == 0
 //! }
 //! 
 //! let mut engine = Engine::new();
@@ -46,9 +46,14 @@ mod engine;
 mod fn_register;
 mod parser;
 
-//#[cfg(test)]
-//mod tests;
+#[cfg(feature = "modules")]
+mod module;
+
+#[cfg(test)]
+mod tests;
 
 pub use engine::{Engine, Scope, EvalAltResult};
 pub use fn_register::FnRegister;
 
+#[cfg(feature = "modules")]
+pub use module::{Module, ModuleError, rhai_import};
