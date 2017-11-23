@@ -3,7 +3,7 @@ use rhai::{Engine, Scope};
 
 fn main() {
     let mut engine = Engine::new();
-    let mut scope: Scope = Vec::new();
+    let mut scope: Scope = Scope::new();
 
     if !engine.eval_with_scope::<()>(&mut scope, "let x = 4 + 5").is_ok() { assert!(false); }
 
