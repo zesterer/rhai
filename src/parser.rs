@@ -170,6 +170,8 @@ pub enum Token {
     XOr,
     Modulo,
     ModuloEquals,
+    PowerOf,
+    PowerOfEquals,
     LexErr(LexError),
 }
 
@@ -223,7 +225,9 @@ impl Token {
             XOr              |
             Modulo           |
             ModuloEquals     |
-            Return => true,
+            Return           |
+            PowerOf          |
+            PowerOfEquals => true,
             _ => false,
         }
     }
@@ -252,7 +256,8 @@ impl Token {
             Pipe             |
             Or               |
             Ampersand        |
-            And => true,
+            And              |
+            PowerOf => true,
             _ => false,
         }
     }
@@ -701,7 +706,16 @@ impl<'a> TokenIterator<'a> {
                         }
                         _ => return Some(Token::Modulo)
                     }
-                }
+                },
+                '~' => {
+                    match self.char_stream.peek() {
+                        Some(&'=') => {
+                            self.char_stream.next();
+                            return Some(Token::PowerOfEquals);
+                        }
+                        _ => return Some(Token::PowerOf)
+                    }
+                },
                 _x if _x.is_whitespace() => (),
                 _ => return Some(Token::LexErr(LexError::UnexpectedChar)),
             }
@@ -740,7 +754,8 @@ fn get_precedence(token: &Token) -> i32 {
         | Token::AndEquals
         | Token::OrEquals
         | Token::XOrEquals
-        | Token::ModuloEquals => 10,
+        | Token::ModuloEquals
+        | Token::PowerOfEquals => 10,
         Token::Or
         | Token::XOr
         | Token::Pipe  => 11,
@@ -755,7 +770,8 @@ fn get_precedence(token: &Token) -> i32 {
         Token::Plus
         | Token::Minus => 20,
         Token::Divide
-        | Token::Multiply => 40,
+        | Token::Multiply
+        | Token::PowerOf => 40,
         Token::LeftShift
         | Token::RightShift => 50,
         Token::Modulo => 60,
@@ -1033,7 +1049,15 @@ fn parse_binop<'a>(input: &mut Peekable<TokenIterator<'a>>,
                         Box::new(lhs_curr),
                         Box::new(Expr::FnCall("%".to_string(), vec![lhs_copy, rhs]))
                     )
-                }
+                },
+                Token::PowerOf => Expr::FnCall("~".to_string(), vec![lhs_curr, rhs]),
+                Token::PowerOfEquals => {
+                    let lhs_copy = lhs_curr.clone();
+                    Expr::Assignment(
+                        Box::new(lhs_curr),
+                        Box::new(Expr::FnCall("~".to_string(), vec![lhs_copy, rhs]))
+                    )
+                },
                 _ => return Err(ParseError::UnknownOperator),
             };
         }
