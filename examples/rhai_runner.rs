@@ -13,7 +13,7 @@ fn main() {
         let mut engine = Engine::new();
 
         register(&mut engine);
-        engine.module_lib_register(register);
+        engine.module_fns(register);
         match engine.eval_file::<()>(&fname) {
             Ok(_) => (),
             Err(e) => {println!("Error: {}", e)}
