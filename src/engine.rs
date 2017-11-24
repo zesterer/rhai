@@ -1764,7 +1764,7 @@ impl Engine {
         // (*ent).push(FnType::ExternalFn2(Box::new(idx)));
     }
 
-    pub fn module_lib_register(&mut self, register: fn(&mut Engine)) {
+    pub fn module_fns(&mut self, register: fn(&mut Engine)) {
         self.module_register = Some(register);
     }
 

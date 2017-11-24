@@ -71,7 +71,7 @@ fn call_rust_fn_from_module() {
     };
 
     let mut engine = Engine::new();
-    engine.module_lib_register(register);
+    engine.module_fns(register);
 
     assert_eq!(
         engine
