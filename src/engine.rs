@@ -1418,6 +1418,9 @@ impl Engine {
         fn left_shift<T: Shl<T>>(x: T, y: T)   -> <T as Shl<T>>::Output { x.shl(y) }
         fn right_shift<T: Shr<T>>(x: T, y: T)   -> <T as Shr<T>>::Output { x.shr(y) }
         fn modulo<T: Rem<T>>(x: T, y: T)   -> <T as Rem<T>>::Output { x % y}
+        fn pow_i64_i64(x: i64, y: i64) -> i64 { x.pow(y as u32) }
+        fn pow_f64_f64(x: f64, y: f64) -> f64 { x.powf(y) }
+        fn pow_f64_i64(x: f64, y: i64) -> f64 { x.powi(y as i32) }
 
         reg_op!(engine, "+", add, i32, i64, u32, u64, f32, f64);
         reg_op!(engine, "-", sub, i32, i64, u32, u64, f32, f64);
@@ -1441,6 +1444,9 @@ impl Engine {
         reg_op!(engine, "<<", left_shift, i32, i64, u32, u64);
         reg_op!(engine, ">>", right_shift, i32, i64, u32, u64);
         reg_op!(engine, "%", modulo, i32, i64, u32, u64);
+        engine.register_fn("~", pow_i64_i64);
+        engine.register_fn("~", pow_f64_f64);
+        engine.register_fn("~", pow_f64_i64);
 
         reg_un!(engine, "-", neg, i32, i64, f32, f64);
         reg_un!(engine, "!", not, bool);

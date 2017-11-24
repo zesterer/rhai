@@ -17,6 +17,7 @@ mod mismatched_op;
 mod not;
 mod number_literals;
 mod ops;
+mod power_of;
 mod string;
 mod unary_after_binary;
 mod unary_minus;
