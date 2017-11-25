@@ -416,3 +416,21 @@ my_str += "ABC";
 
 my_str == "abcABC"
 ```
+
+## Modules
+Rhai supports extremely simple modules via `import` and `use`.
+Import imports a module with a given file name. The string can be
+a result of an expression:
+
+```rust
+let my_module = import "module.rhai";
+```
+The module is then loaded into the variable and is available within
+the scope of the variable under its name. Code in the imported file is ran on loading,
+which can be useful for initializations.
+Symbols in modules need to be brought into scope with the `use` statement:
+
+```rust
+use my_module::my_variable;
+use my_module::my_func;
+```
