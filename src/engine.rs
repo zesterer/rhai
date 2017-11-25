@@ -14,31 +14,54 @@ use module::{Module, ModuleError};
 use std::ops::{Add, Sub, Mul, Div, Neg, BitAnd, BitOr, BitXor, Shl, Shr, Rem};
 use std::cmp::{PartialOrd, PartialEq};
 
-
+/// Contains evaluation results, that's either
+/// error, returned values and some internal variants
 #[derive(Debug)]
 pub enum EvalAltResult {
+    /// Returned when a function wasn't found in the current script
     ErrorFunctionNotFound,
+    /// A function was found, either in current script or submodules,
+    /// but arguments do not match
     ErrorFunctionArgMismatch,
+    /// Legacy error
     ErrorFunctionCallNotSupported,
+    /// Returned when an index doesn't match the array it was applied to
     ErrorIndexMismatch,
+    /// If guard does not evaluate to a boolean
     ErrorIfGuardMismatch,
+    /// Variable not found in current scope
     ErrorVariableNotFound(String),
+    /// Legacy error
     ErrorFunctionArityNotSupported,
+    /// Assignment to an unsupported left-hand side
     ErrorAssignmentToUnknownLHS,
+    /// Output could not be casted to intended type
     ErrorMismatchOutputType,
+    /// Cannot open script file
     ErrorCantOpenScriptFile,
+    /// Unexpected expression in dot expression, this error is internal.
     InternalErrorMalformedDotExpression,
+    /// Loop was broken before completion. Internal, let's the interpreter know
+    /// that `break` was used
     LoopBreak,
+    /// Contains a returned value
     Return(Box<Any>),
 
+    /// Module error. Returned when Rhai was unable to open, read or execute
+    /// the script.
     #[cfg(feature = "modules")]
     ModuleError(ModuleError),
+    /// Returned when trying to `use` a symbol, which isn't in the given
+    /// module.
     #[cfg(feature = "modules")]
     ErrorModuleMemberNotFound,
+    /// Module produced an error during execution
     #[cfg(feature = "modules")]
     ErrorErroneousModule,
+    /// Returned when trying to use a module which is not in scope.
     #[cfg(feature = "modules")]
     ErrorModuleNotFound,
+    /// Returned when trying to `use` a variable which isn't a module
     #[cfg(feature = "modules")]
     ErrorNotAModule,
 }
@@ -92,6 +115,7 @@ impl fmt::Display for EvalAltResult {
     }
 }
 
+/// Enumeration used to store functions used by a Rhai engine.
 pub enum FnType {
     ExternalFn0(Box<Fn() -> Result<Box<Any>, EvalAltResult>>),
     ExternalFn1(Box<Fn(&mut Box<Any>) -> Result<Box<Any>, EvalAltResult>>),
@@ -133,6 +157,8 @@ pub enum FnType {
 pub struct Engine {
     /// A hashmap containing all functions know to the engine
     pub fns: HashMap<String, Vec<FnType>>,
+    /// Optionally contains a function, which is used to register
+    /// Rust functions, types or properties to submodules
     pub module_register: Option<fn(&mut Engine)>,
 }
 
@@ -152,22 +178,33 @@ pub struct Engine {
 /// Between runs, `Engine` only remembers functions when not using own `Scope`.
 #[derive(Debug)]
 pub struct Scope {
+    /// Contains symbols - variables and modules
     pub symbols: Vec<(String, Box<Any>)>,
+    /// Contains resolved `use` statements
     pub uses: Vec<(String, String, UseType)>,
 }
 
+/// Type of `use` - whether it is a function or a variable (or perhaps a submodule)
 #[derive(Debug, PartialEq, Clone)]
 pub enum UseType {
+    /// A function
     Function,
+    /// Either a variable or a module
     Symbol,
 }
 
 impl Scope {
+    /// Create a new scope
     pub fn new() -> Scope                                     { Scope { symbols: Vec::new(), uses: Vec::new() } }
+    /// Amount of symbols in a scope
     pub fn len(&self) -> usize                                { self.symbols.len() }
+    /// `true` if scope contains no symbols
     pub fn is_empty(&self) -> bool                            { self.symbols.is_empty() }
+    /// push a symbol to the scope
     pub fn push(&mut self, symbol: (String, Box<Any>))        { self.symbols.push(symbol) }
+    /// pop a symbol from the scope
     pub fn pop(&mut self) -> Option<(String, Box<Any>)>       { self.symbols.pop() }
+    /// get a mutable iterator over symbols in scope
     pub fn iter_mut(&mut self) -> IterMut<(String, Box<Any>)> { self.symbols.iter_mut() }
 }
 
@@ -1764,6 +1801,7 @@ impl Engine {
         // (*ent).push(FnType::ExternalFn2(Box::new(idx)));
     }
 
+    /// Register a symbol-registering function for submodules
     pub fn module_fns(&mut self, register: fn(&mut Engine)) {
         self.module_register = Some(register);
     }
