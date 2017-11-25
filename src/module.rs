@@ -6,21 +6,32 @@ use std::error::Error;
 use std::io::{Read};
 use engine::{Scope, Engine};
 
+/// Contains a Rhai module
 pub struct Module {
+	/// Filename of the script (what was passed to `import`)
     pub name: String,
+    /// Scope associated to Engine local to the module
     pub scope: Mutex<Scope>,
+    /// Contents of the script, used for execution, which can (in future) be optionally lazy
     pub script: String,
+    /// Engine local to the module
     pub engine: Engine,
+    /// `true` if there was an error during execution
     pub is_erroneous: bool,
+    /// `true` if module was already executed
     pub is_executed: bool,
 }
 
+/// An enum containing errors produced during loading and execution of a module
 // TODO - better errors
 #[derive(Debug)]
 pub enum ModuleError {
-    FileAccessError,
+    /// Unable to open file
     CouldntOpenFile,
+    /// Able to access file, but cannot read it
+    FileAccessError,
     //EvaluationError(EvalAltResult),
+    /// Filename is not a valid string
     InvalidFilename,
 }
 
@@ -48,6 +59,7 @@ impl fmt::Display for ModuleError {
 }
 
 impl Module {
+	/// create a new Module
     pub fn new() -> Module {
         Module {
             name: String::new(),
@@ -59,6 +71,7 @@ impl Module {
         }
     }
 
+    /// manually import a module from path
     // todo proper errors
     pub fn import<P: AsRef<Path>>(path: P) -> Result<Module, ModuleError> {
         let scope = Scope::new();
@@ -89,6 +102,7 @@ impl Module {
         })
     }
 
+    /// execute a module
     pub fn exec(&mut self, parent: &Engine) {
         if let Some(reg) = parent.module_register {
             println!("register for module");
@@ -103,6 +117,7 @@ impl Module {
     }
 }
 
+/// This function is registered to every Rhai engine.
 pub fn rhai_import(s: String) -> Module {
     match Module::import(&s) {
         Ok(m) => m,
