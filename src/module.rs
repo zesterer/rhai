@@ -8,7 +8,7 @@ use engine::{Scope, Engine};
 
 /// Contains a Rhai module
 pub struct Module {
-	/// Filename of the script (what was passed to `import`)
+    /// Filename of the script (what was passed to `import`)
     pub name: String,
     /// Scope associated to Engine local to the module
     pub scope: Mutex<Scope>,
@@ -59,7 +59,7 @@ impl fmt::Display for ModuleError {
 }
 
 impl Module {
-	/// create a new Module
+    /// create a new Module
     pub fn new() -> Module {
         Module {
             name: String::new(),
