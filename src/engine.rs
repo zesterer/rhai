@@ -649,7 +649,6 @@ impl Engine {
         where F: 'static + Fn(&mut T) -> U,
               G: 'static + Fn(&mut T, U) -> ()
     {
-
         self.register_get(name, get_fn);
         self.register_set(name, set_fn);
     }
@@ -1747,7 +1746,7 @@ impl Engine {
         engine.register_type::<char>();
         engine.register_type::<bool>();
 
-        #[cfg(module)]
+        #[cfg(feature = "modules")]
         engine.register_type::<Module>();
 
         macro_rules! reg_op {
