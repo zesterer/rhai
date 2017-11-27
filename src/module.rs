@@ -1,21 +1,23 @@
 use std::fmt;
 use std::fs::File;
-use std::path::Path;
-use std::sync::Mutex;
-use std::error::Error;
 use std::io::{Read};
+use std::path::Path;
+use std::error::Error;
 use engine::{Scope, Engine};
+use std::sync::{Mutex, Arc, RwLock};
 
 /// Contains a Rhai module
+/// This struct is usually wrapped in Module
+#[derive(Clone)]
 pub struct Module {
     /// Filename of the script (what was passed to `import`)
     pub name: String,
     /// Scope associated to Engine local to the module
-    pub scope: Mutex<Scope>,
+    pub scope: Arc<Mutex<Scope>>,
     /// Contents of the script, used for execution, which can (in future) be optionally lazy
     pub script: String,
     /// Engine local to the module
-    pub engine: Engine,
+    pub engine: Arc<RwLock<Engine>>,
     /// `true` if there was an error during execution
     pub is_erroneous: bool,
     /// `true` if module was already executed
@@ -35,6 +37,9 @@ pub enum ModuleError {
     InvalidFilename,
 }
 
+// TODO - wrap Module in ArcMutex
+//pub struct Module(Arc<Mutex<InnerModule>>);
+
 impl Error for ModuleError {
     fn description(&self) -> &str {
         use ModuleError::*;
@@ -42,7 +47,7 @@ impl Error for ModuleError {
         match *self {
             FileAccessError => "error accessing file",
             CouldntOpenFile => "couldn't open file",
-            //EvaluationError(_) => "error while evaluating",
+            //EvaluationError(_) => "error while evaluating", - TODO
             InvalidFilename => "invalid filename",
         }
     }
@@ -63,9 +68,9 @@ impl Module {
     pub fn new() -> Module {
         Module {
             name: String::new(),
-            scope: Mutex::new(Scope::new()),
+            scope: Arc::new(Mutex::new(Scope::new())),
             script: String::new(),
-            engine: Engine::new(),
+            engine: Arc::new(RwLock::new(Engine::new())),
             is_erroneous: false,
             is_executed: false,
         }
@@ -75,7 +80,7 @@ impl Module {
     // todo proper errors
     pub fn import<P: AsRef<Path>>(path: P) -> Result<Module, ModuleError> {
         let scope = Scope::new();
-        let engine = Engine::new();
+        let engine = Arc::new(RwLock::new(Engine::new()));
         let mut script = String::new();
         let name = if let Some(s) = path
             .as_ref()
@@ -94,7 +99,7 @@ impl Module {
 
         Ok(Module {
             name,
-            scope: Mutex::new(scope),
+            scope: Arc::new(Mutex::new(scope)),
             script,
             engine,
             is_erroneous: false,
@@ -104,12 +109,13 @@ impl Module {
 
     /// execute a module
     pub fn exec(&mut self, parent: &Engine) {
+        let mut engine = (*self.engine).write().unwrap();
         if let Some(reg) = parent.module_register {
             println!("register for module");
-            reg(&mut self.engine);
+            reg(&mut *engine);
         }
 
-        if self.engine.consume_with_scope(&mut *self.scope.lock().unwrap(), &self.script).is_err() {
+        if engine.consume_with_scope(&mut *self.scope.lock().unwrap(), &self.script).is_err() {
             self.is_erroneous = true;
         }
 

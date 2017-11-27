@@ -1154,13 +1154,17 @@ impl Engine {
                         } else if let Some(&(ref module, ..)) = scope.uses.iter().find(|x| x.1 == *fn_name && x.2 == UseType::Function) {
                             if let Some(&(.., ref md)) = scope.symbols.iter().find(|x| *x.0 == *module) {
                                 match md.downcast_ref::<Module>() {
-                                    Some(modul) => modul.engine.call_fn(fn_name,
-                                                                        None,
-                                                                        None,
-                                                                        None,
-                                                                        None,
-                                                                        None,
-                                                                        None),
+                                    Some(modul) => {
+                                        // should be safe
+                                        let engine = (*modul.engine).read().unwrap();
+                                        engine.call_fn(fn_name,
+                                                       None,
+                                                       None,
+                                                       None,
+                                                       None,
+                                                       None,
+                                                       None)
+                                    }
                                     None => Err(EvalAltResult::ErrorNotAModule),
                                 }
                             } else { Err(EvalAltResult::ErrorModuleNotFound) }
@@ -1182,13 +1186,17 @@ impl Engine {
                         } else if let Some(&(ref module, ..)) = scope.uses.iter().find(|x| x.1 == *fn_name && x.2 == UseType::Function) {
                             if let Some(&(.., ref md)) = scope.symbols.iter().find(|x| *x.0 == *module) {
                                 match md.downcast_ref::<Module>() {
-                                    Some(modul) => modul.engine.call_fn(fn_name,
-                                                                        Some(&mut arg),
-                                                                        None,
-                                                                        None,
-                                                                        None,
-                                                                        None,
-                                                                        None),
+                                    Some(modul) => {
+                                        // should be safe, for now
+                                        let engine = (*modul.engine).read().unwrap();
+                                        engine.call_fn(fn_name,
+                                                       Some(&mut arg),
+                                                       None,
+                                                       None,
+                                                       None,
+                                                       None,
+                                                       None)
+                                    }
                                     None => Err(EvalAltResult::ErrorNotAModule),
                                 }
                             } else { Err(EvalAltResult::ErrorModuleNotFound) }
@@ -1223,13 +1231,17 @@ impl Engine {
                         } else if let Some(&(ref module, ..)) = scope.uses.iter().find(|x| x.1 == *fn_name && x.2 == UseType::Function) {
                             if let Some(&(.., ref md)) = scope.symbols.iter().find(|x| *x.0 == *module) {
                                 match md.downcast_ref::<Module>() {
-                                    Some(modul) => modul.engine.call_fn(fn_name,
-                                                                        Some(&mut arg1),
-                                                                        Some(&mut arg2),
-                                                                        None,
-                                                                        None,
-                                                                        None,
-                                                                        None),
+                                    Some(modul) => {
+                                        // should be safe, for now
+                                        let engine = (*modul.engine).read().unwrap();
+                                        engine.call_fn(fn_name,
+                                                       Some(&mut arg1),
+                                                       Some(&mut arg2),
+                                                       None,
+                                                       None,
+                                                       None,
+                                                       None)
+                                    }
                                     None => Err(EvalAltResult::ErrorNotAModule),
                                 }
                             } else { Err(EvalAltResult::ErrorModuleNotFound) }
@@ -1240,12 +1252,12 @@ impl Engine {
                     #[cfg(not(feature = "modules"))]
                     {
                         self.call_fn(fn_name,
-                                         Some(&mut arg1),
-                                         Some(&mut arg2),
-                                         None,
-                                         None,
-                                         None,
-                                         None)
+                                     Some(&mut arg1),
+                                     Some(&mut arg2),
+                                     None,
+                                     None,
+                                     None,
+                                     None)
                     }
                 } else if args.len() == 3 {
                     let mut arg1 = self.eval_expr(scope, &args[0])?;
@@ -1265,13 +1277,17 @@ impl Engine {
                         } else if let Some(&(ref module, ..)) = scope.uses.iter().find(|x| x.1 == *fn_name && x.2 == UseType::Function) {
                             if let Some(&(.., ref md)) = scope.symbols.iter().find(|x| *x.0 == *module) {
                                 match md.downcast_ref::<Module>() {
-                                    Some(modul) => modul.engine.call_fn(fn_name,
-                                                                        Some(&mut arg1),
-                                                                        Some(&mut arg2),
-                                                                        Some(&mut arg3),
-                                                                        None,
-                                                                        None,
-                                                                        None),
+                                    Some(modul) => {
+                                        // should be safe, for now
+                                        let engine = (*modul.engine).read().unwrap();
+                                        engine.call_fn(fn_name,
+                                                       Some(&mut arg1),
+                                                       Some(&mut arg2),
+                                                       Some(&mut arg3),
+                                                       None,
+                                                       None,
+                                                       None)
+                                    }
                                     None => Err(EvalAltResult::ErrorNotAModule),
                                 }
                             } else { Err(EvalAltResult::ErrorModuleNotFound) }
@@ -1280,12 +1296,12 @@ impl Engine {
                     #[cfg(not(feature = "modules"))]
                     {
                         self.call_fn(fn_name,
-                                         Some(&mut arg1),
-                                         Some(&mut arg2),
-                                         Some(&mut arg3),
-                                         None,
-                                         None,
-                                         None)
+                                     Some(&mut arg1),
+                                     Some(&mut arg2),
+                                     Some(&mut arg3),
+                                     None,
+                                     None,
+                                     None)
                     }
                 } else if args.len() == 4 {
                     let mut arg1 = self.eval_expr(scope, &args[0])?;
@@ -1306,13 +1322,17 @@ impl Engine {
                         } else if let Some(&(ref module, ..)) = scope.uses.iter().find(|x| x.1 == *fn_name && x.2 == UseType::Function) {
                             if let Some(&(.., ref md)) = scope.symbols.iter().find(|x| *x.0 == *module) {
                                 match md.downcast_ref::<Module>() {
-                                    Some(modul) => modul.engine.call_fn(fn_name,
-                                                                        Some(&mut arg1),
-                                                                        Some(&mut arg2),
-                                                                        Some(&mut arg3),
-                                                                        Some(&mut arg4),
-                                                                        None,
-                                                                        None),
+                                    Some(modul) => {
+                                        // should be safe, for now
+                                        let engine = (*modul.engine).read().unwrap();
+                                        engine.call_fn(fn_name,
+                                                       Some(&mut arg1),
+                                                       Some(&mut arg2),
+                                                       Some(&mut arg3),
+                                                       Some(&mut arg4),
+                                                       None,
+                                                       None)
+                                    }
                                     None => Err(EvalAltResult::ErrorNotAModule),
                                 }
                             } else { Err(EvalAltResult::ErrorModuleNotFound) }
@@ -1323,12 +1343,12 @@ impl Engine {
                     #[cfg(not(feature = "modules"))]
                     {
                         self.call_fn(fn_name,
-                                         Some(&mut arg1),
-                                         Some(&mut arg2),
-                                         Some(&mut arg3),
-                                         Some(&mut arg4),
-                                         None,
-                                         None)
+                                     Some(&mut arg1),
+                                     Some(&mut arg2),
+                                     Some(&mut arg3),
+                                     Some(&mut arg4),
+                                     None,
+                                     None)
                     }
                 } else if args.len() == 5 {
                     let mut arg1 = self.eval_expr(scope, &args[0])?;
@@ -1350,13 +1370,17 @@ impl Engine {
                         } else if let Some(&(ref module, ..)) = scope.uses.iter().find(|x| x.1 == *fn_name && x.2 == UseType::Function) {
                                 if let Some(&(.., ref md)) = scope.symbols.iter().find(|x| *x.0 == *module) {
                                     match md.downcast_ref::<Module>() {
-                                        Some(modul) => modul.engine.call_fn(fn_name,
-                                                                            Some(&mut arg1),
-                                                                            Some(&mut arg2),
-                                                                            Some(&mut arg3),
-                                                                            Some(&mut arg4),
-                                                                            Some(&mut arg5),
-                                                                            None),
+                                        Some(modul) => {
+                                        // should be safe, for now
+                                        let engine = (*modul.engine).read().unwrap();
+                                        engine.call_fn(fn_name,
+                                                       Some(&mut arg1),
+                                                       Some(&mut arg2),
+                                                       Some(&mut arg3),
+                                                       Some(&mut arg4),
+                                                       Some(&mut arg5),
+                                                       None)
+                                        }
                                         None => Err(EvalAltResult::ErrorNotAModule),
                                     }
                                 } else { Err(EvalAltResult::ErrorModuleNotFound) }
@@ -1367,12 +1391,12 @@ impl Engine {
                     #[cfg(not(feature = "modules"))]
                     {
                         self.call_fn(fn_name,
-                                         Some(&mut arg1),
-                                         Some(&mut arg2),
-                                         Some(&mut arg3),
-                                         Some(&mut arg4),
-                                         Some(&mut arg5),
-                                         None)
+                                     Some(&mut arg1),
+                                     Some(&mut arg2),
+                                     Some(&mut arg3),
+                                     Some(&mut arg4),
+                                     Some(&mut arg5),
+                                     None)
                     }
                 } else if args.len() == 6 {
                     let mut arg1 = self.eval_expr(scope, &args[0])?;
@@ -1395,13 +1419,17 @@ impl Engine {
                         } else if let Some(&(ref module, ..)) = scope.uses.iter().find(|x| x.1 == *fn_name && x.2 == UseType::Function) {
                                 if let Some(&(.., ref md)) = scope.symbols.iter().find(|x| *x.0 == *module) {
                                     match md.downcast_ref::<Module>() {
-                                        Some(modul) => modul.engine.call_fn(fn_name,
-                                                                            Some(&mut arg1),
-                                                                            Some(&mut arg2),
-                                                                            Some(&mut arg3),
-                                                                            Some(&mut arg4),
-                                                                            Some(&mut arg5),
-                                                                            Some(&mut arg6)),
+                                        Some(modul) => {
+                                        // should be safe, for now
+                                        let engine = (*modul.engine).read().unwrap();
+                                        engine.call_fn(fn_name,
+                                                       Some(&mut arg1),
+                                                       Some(&mut arg2),
+                                                       Some(&mut arg3),
+                                                       Some(&mut arg4),
+                                                       Some(&mut arg5),
+                                                       Some(&mut arg6))
+                                        }
                                         None => Err(EvalAltResult::ErrorNotAModule),
                                     }
                                 } else { Err(EvalAltResult::ErrorModuleNotFound) }
@@ -1412,12 +1440,12 @@ impl Engine {
                     #[cfg(not(feature = "modules"))]
                     {
                         self.call_fn(fn_name,
-                                         Some(&mut arg1),
-                                         Some(&mut arg2),
-                                         Some(&mut arg3),
-                                         Some(&mut arg4),
-                                         Some(&mut arg5),
-                                         Some(&mut arg6))
+                                     Some(&mut arg1),
+                                     Some(&mut arg2),
+                                     Some(&mut arg3),
+                                     Some(&mut arg4),
+                                     Some(&mut arg5),
+                                     Some(&mut arg6))
                     }
                 } else {
                     Err(EvalAltResult::ErrorFunctionCallNotSupported)
@@ -1552,11 +1580,12 @@ impl Engine {
                     if let Some(rhai_module) = symbol_any.downcast_ref::<Module>() {
                         if rhai_module.is_erroneous { return Err(EvalAltResult::ErrorErroneousModule) }
 
+                        let engine = (*rhai_module.engine).read().unwrap();
                         if rhai_module.scope.lock().unwrap().symbols.iter().any(|x| x.0 == *symbol) {
                             scope.uses.push((module.clone(), symbol.clone(), UseType::Symbol));
                             return Ok(Box::new(()));
                         }
-                        else if rhai_module.engine.fns.iter().any(|x| x.0 == symbol) {
+                        else if engine.fns.iter().any(|x| x.0 == symbol) {
                             scope.uses.push((module.clone(), symbol.clone(), UseType::Function));
                             return Ok(Box::new(()));
                         }
