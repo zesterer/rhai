@@ -111,7 +111,6 @@ impl Module {
     pub fn exec(&mut self, parent: &Engine) {
         let mut engine = (*self.engine).write().unwrap();
         if let Some(reg) = parent.module_register {
-            println!("register for module");
             reg(&mut *engine);
         }
 

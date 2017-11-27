@@ -22,7 +22,6 @@ fn main() {
 }
 
 fn register(engine: &mut Engine) {
-    println!("register ran");
     engine.register_fn("print", showit as fn(x: &mut i32)->());
     engine.register_fn("print", showit as fn(x: &mut i64)->());
     engine.register_fn("print", showit as fn(x: &mut u32)->());
