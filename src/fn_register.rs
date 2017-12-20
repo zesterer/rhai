@@ -1,421 +1,68 @@
-use std::any::Any;
-use std::boxed::Box;
+use std::any::TypeId;
 
-use engine::{EvalAltResult, Engine, FnType};
+use any::Any;
+use engine::{Engine, EvalAltResult};
 
-/// A trait used for registering functions to an Engine
-/// Currently, Rhai supports functions with up to 6 parameters
-pub trait FnRegister<A, RetVal, Args> {
-	/// A method used for registering functions and methods to a Engine
-    fn register_fn(&mut self, name: &str, f: A);
+pub trait RegisterFn<FN, ARGS, RET> {
+    fn register_fn(&mut self, name: &str, f: FN);
 }
 
-impl<'a, A, T, U, V, W, X, Y, Z> FnRegister<A, Z, (&'a mut T, U, V, W, X, Y)> for Engine
-    where A: 'static + Fn(&mut T, U, V, W, X, Y) -> Z,
-          T: Any,
-          U: Clone + Any,
-          V: Clone + Any,
-          W: Clone + Any,
-          X: Clone + Any,
-          Y: Clone + Any,
-          Z: Any
-{
-    fn register_fn(&mut self, name: &str, fun: A) {
-        let wrapped: Box<Fn(&mut Box<Any>,
-                            &mut Box<Any>,
-                            &mut Box<Any>,
-                            &mut Box<Any>,
-                            &mut Box<Any>,
-                            &mut Box<Any>)
-                            -> Result<Box<Any>, EvalAltResult>> =
-            Box::new(move |arg1: &mut Box<Any>,
-                           arg2: &mut Box<Any>,
-                           arg3: &mut Box<Any>,
-                           arg4: &mut Box<Any>,
-                           arg5: &mut Box<Any>,
-                           arg6: &mut Box<Any>| {
+pub struct Ref<A>(A);
+pub struct Mut<A>(A);
 
-                let inside1 = (*arg1).downcast_mut() as Option<&mut T>;
-                let inside2 = (*arg2).downcast_mut() as Option<&mut U>;
-                let inside3 = (*arg3).downcast_mut() as Option<&mut V>;
-                let inside4 = (*arg4).downcast_mut() as Option<&mut W>;
-                let inside5 = (*arg5).downcast_mut() as Option<&mut X>;
-                let inside6 = (*arg6).downcast_mut() as Option<&mut Y>;
+macro_rules! count_args {
+    () => {0usize};
+    ($head:ident $($tail:ident)*) => {1usize + count_args!($($tail)*)};
+}
 
-                match (inside1, inside2, inside3, inside4, inside5, inside6) {
-                    (Some(b), Some(c), Some(d), Some(e), Some(f), Some(g)) => {
-                        Ok(Box::new(fun(b,
-                                        c.clone(),
-                                        d.clone(),
-                                        e.clone(),
-                                        f.clone(),
-                                        g.clone())) as Box<Any>)
+macro_rules! def_register {
+    () => {
+        def_register!(imp);
+    };
+    (imp $($par:ident => $mark:ty => $param:ty => $clone:expr),*) => {
+        impl<$($par,)* FN, RET> RegisterFn<FN, ($($mark,)*), RET> for Engine
+        where
+            $($par: Any + Clone,)*
+            FN: Fn($($param),*) -> RET + 'static,
+            RET: Any,
+        {
+            fn register_fn(&mut self, name: &str, f: FN) {
+                let fun = move |mut args: Vec<&mut Box<Any>>| {
+                    // Check for length at the beginning to avoid
+                    // per-element bound checks.
+                    if args.len() != count_args!($($par)*) {
+                        return Err(EvalAltResult::ErrorFunctionArgMismatch);
                     }
-                    _ => Err(EvalAltResult::ErrorFunctionArgMismatch),
-                }
-            });
 
-        let ent = self.fns.entry(name.to_string()).or_insert_with(Vec::new);
-        (*ent).push(FnType::ExternalFn6(wrapped));
-    }
+                    let mut drain = args.drain(..);
+                    $(
+                    // Downcast every element, return in case of a type mismatch
+                    let $par = ((*drain.next().unwrap()).downcast_mut() as Option<&mut $par>)
+                        .ok_or(EvalAltResult::ErrorFunctionArgMismatch)?;
+                    )*
+
+                    // Call the user-supplied function using ($clone) to
+                    // potentially clone the value, otherwise pass the reference.
+                    Ok(Box::new(f($(($clone)($par)),*)) as Box<Any>)
+                };
+                self.register_fn_raw(name.to_owned(), vec![$(TypeId::of::<$par>()),*], Box::new(fun));
+            }
+        }
+
+        //def_register!(imp_pop $($par => $mark => $param),*);
+    };
+    ($p0:ident $(, $p:ident)*) => {
+        def_register!(imp $p0 => $p0 => $p0 => Clone::clone $(, $p => $p => $p => Clone::clone)*);
+        def_register!(imp $p0 => Ref<$p0> => &$p0 => |x| { x } $(, $p => $p => $p => Clone::clone)*);
+        def_register!(imp $p0 => Mut<$p0> => &mut $p0 => |x| { x } $(, $p => $p => $p => Clone::clone)*);
+
+        def_register!($($p),*);
+    };
+//    (imp_pop) => {};
+//    (imp_pop $head:ident => $head_mark:ty => $head_param:ty $(,$tail:ident => $tail_mark:ty => $tp:ty)*) => {
+//        def_register!(imp $($tail => $tail_mark => $tp),*);
+//    };
 }
 
-impl<'a, A, T, U, V, W, X, Y, Z> FnRegister<A, Z, (&'a T, U, V, W, X, Y)> for Engine
-    where A: 'static + Fn(T, U, V, W, X, Y) -> Z,
-          T: Clone + Any,
-          U: Clone + Any,
-          V: Clone + Any,
-          W: Clone + Any,
-          X: Clone + Any,
-          Y: Clone + Any,
-          Z: Any
-{
-    fn register_fn(&mut self, name: &str, fun: A) {
-        let wrapped: Box<Fn(&mut Box<Any>,
-                            &mut Box<Any>,
-                            &mut Box<Any>,
-                            &mut Box<Any>,
-                            &mut Box<Any>,
-                            &mut Box<Any>)
-                            -> Result<Box<Any>, EvalAltResult>> =
-            Box::new(move |arg1: &mut Box<Any>,
-                           arg2: &mut Box<Any>,
-                           arg3: &mut Box<Any>,
-                           arg4: &mut Box<Any>,
-                           arg5: &mut Box<Any>,
-                           arg6: &mut Box<Any>| {
-
-                let inside1 = (*arg1).downcast_mut() as Option<&mut T>;
-                let inside2 = (*arg2).downcast_mut() as Option<&mut U>;
-                let inside3 = (*arg3).downcast_mut() as Option<&mut V>;
-                let inside4 = (*arg4).downcast_mut() as Option<&mut W>;
-                let inside5 = (*arg5).downcast_mut() as Option<&mut X>;
-                let inside6 = (*arg6).downcast_mut() as Option<&mut Y>;
-
-                match (inside1, inside2, inside3, inside4, inside5, inside6) {
-                    (Some(b), Some(c), Some(d), Some(e), Some(f), Some(g)) => {
-                        Ok(Box::new(fun(b.clone(),
-                                        c.clone(),
-                                        d.clone(),
-                                        e.clone(),
-                                        f.clone(),
-                                        g.clone())) as Box<Any>)
-                    }
-                    _ => Err(EvalAltResult::ErrorFunctionArgMismatch),
-                }
-            });
-
-        let ent = self.fns.entry(name.to_string()).or_insert_with(Vec::new);
-        (*ent).push(FnType::ExternalFn6(wrapped));
-    }
-}
-
-impl<'a, A, T, U, V, W, X, Y> FnRegister<A, Y, (&'a mut T, U, V, W, X)> for Engine
-    where A: 'static + Fn(&mut T, U, V, W, X) -> Y,
-          T: Any,
-          U: Clone + Any,
-          V: Clone + Any,
-          W: Clone + Any,
-          X: Clone + Any,
-          Y: Any
-{
-    fn register_fn(&mut self, name: &str, fun: A) {
-        let wrapped: Box<Fn(&mut Box<Any>,
-                            &mut Box<Any>,
-                            &mut Box<Any>,
-                            &mut Box<Any>,
-                            &mut Box<Any>)
-                            -> Result<Box<Any>, EvalAltResult>> =
-            Box::new(move |arg1: &mut Box<Any>,
-                           arg2: &mut Box<Any>,
-                           arg3: &mut Box<Any>,
-                           arg4: &mut Box<Any>,
-                           arg5: &mut Box<Any>| {
-
-                let inside1 = (*arg1).downcast_mut() as Option<&mut T>;
-                let inside2 = (*arg2).downcast_mut() as Option<&mut U>;
-                let inside3 = (*arg3).downcast_mut() as Option<&mut V>;
-                let inside4 = (*arg4).downcast_mut() as Option<&mut W>;
-                let inside5 = (*arg5).downcast_mut() as Option<&mut X>;
-
-                match (inside1, inside2, inside3, inside4, inside5) {
-                    (Some(b), Some(c), Some(d), Some(e), Some(f)) => {
-                        Ok(Box::new(fun(b, c.clone(), d.clone(), e.clone(), f.clone())) as Box<Any>)
-                    }
-                    _ => Err(EvalAltResult::ErrorFunctionArgMismatch),
-                }
-            });
-
-        let ent = self.fns.entry(name.to_string()).or_insert_with(Vec::new);
-        (*ent).push(FnType::ExternalFn5(wrapped));
-    }
-}
-
-impl<'a, A, T, U, V, W, X, Y> FnRegister<A, Y, (&'a T, U, V, W, X)> for Engine
-    where A: 'static + Fn(T, U, V, W, X) -> Y,
-          T: Clone + Any,
-          U: Clone + Any,
-          V: Clone + Any,
-          W: Clone + Any,
-          X: Clone + Any,
-          Y: Any
-{
-    fn register_fn(&mut self, name: &str, fun: A) {
-        let wrapped: Box<Fn(&mut Box<Any>,
-                            &mut Box<Any>,
-                            &mut Box<Any>,
-                            &mut Box<Any>,
-                            &mut Box<Any>)
-                            -> Result<Box<Any>, EvalAltResult>> =
-            Box::new(move |arg1: &mut Box<Any>,
-                           arg2: &mut Box<Any>,
-                           arg3: &mut Box<Any>,
-                           arg4: &mut Box<Any>,
-                           arg5: &mut Box<Any>| {
-
-                let inside1 = (*arg1).downcast_mut() as Option<&mut T>;
-                let inside2 = (*arg2).downcast_mut() as Option<&mut U>;
-                let inside3 = (*arg3).downcast_mut() as Option<&mut V>;
-                let inside4 = (*arg4).downcast_mut() as Option<&mut W>;
-                let inside5 = (*arg5).downcast_mut() as Option<&mut X>;
-
-                match (inside1, inside2, inside3, inside4, inside5) {
-                    (Some(b), Some(c), Some(d), Some(e), Some(f)) => {
-                        Ok(Box::new(fun(b.clone(),
-                                        c.clone(),
-                                        d.clone(),
-                                        e.clone(),
-                                        f.clone())) as Box<Any>)
-                    }
-                    _ => Err(EvalAltResult::ErrorFunctionArgMismatch),
-                }
-            });
-
-        let ent = self.fns.entry(name.to_string()).or_insert_with(Vec::new);
-        (*ent).push(FnType::ExternalFn5(wrapped));
-    }
-}
-
-impl<'a, A, T, U, V, W, X> FnRegister<A, X, (&'a mut T, U, V, W)> for Engine
-    where A: 'static + Fn(&mut T, U, V, W) -> X,
-          T: Any,
-          U: Clone + Any,
-          V: Clone + Any,
-          W: Clone + Any,
-          X: Any
-{
-    fn register_fn(&mut self, name: &str, fun: A) {
-        let wrapped: Box<Fn(&mut Box<Any>, &mut Box<Any>, &mut Box<Any>, &mut Box<Any>)
-                            -> Result<Box<Any>, EvalAltResult>> =
-            Box::new(move |arg1: &mut Box<Any>,
-                           arg2: &mut Box<Any>,
-                           arg3: &mut Box<Any>,
-                           arg4: &mut Box<Any>| {
-                let inside1 = (*arg1).downcast_mut() as Option<&mut T>;
-                let inside2 = (*arg2).downcast_mut() as Option<&mut U>;
-                let inside3 = (*arg3).downcast_mut() as Option<&mut V>;
-                let inside4 = (*arg4).downcast_mut() as Option<&mut W>;
-
-                match (inside1, inside2, inside3, inside4) {
-                    (Some(b), Some(c), Some(d), Some(e)) => {
-                        Ok(Box::new(fun(b, c.clone(), d.clone(), e.clone())) as Box<Any>)
-                    }
-                    _ => Err(EvalAltResult::ErrorFunctionArgMismatch),
-                }
-            });
-
-        let ent = self.fns.entry(name.to_string()).or_insert_with(Vec::new);
-        (*ent).push(FnType::ExternalFn4(wrapped));
-    }
-}
-
-impl<'a, A, T, U, V, W, X> FnRegister<A, X, (&'a T, U, V, W)> for Engine
-    where A: 'static + Fn(T, U, V, W) -> X,
-          T: Clone + Any,
-          U: Clone + Any,
-          V: Clone + Any,
-          W: Clone + Any,
-          X: Any
-{
-    fn register_fn(&mut self, name: &str, fun: A) {
-        let wrapped: Box<Fn(&mut Box<Any>, &mut Box<Any>, &mut Box<Any>, &mut Box<Any>)
-                            -> Result<Box<Any>, EvalAltResult>> =
-            Box::new(move |arg1: &mut Box<Any>,
-                           arg2: &mut Box<Any>,
-                           arg3: &mut Box<Any>,
-                           arg4: &mut Box<Any>| {
-                let inside1 = (*arg1).downcast_mut() as Option<&mut T>;
-                let inside2 = (*arg2).downcast_mut() as Option<&mut U>;
-                let inside3 = (*arg3).downcast_mut() as Option<&mut V>;
-                let inside4 = (*arg4).downcast_mut() as Option<&mut W>;
-
-                match (inside1, inside2, inside3, inside4) {
-                    (Some(b), Some(c), Some(d), Some(e)) => {
-                        Ok(Box::new(fun(b.clone(), c.clone(), d.clone(), e.clone())) as Box<Any>)
-                    }
-                    _ => Err(EvalAltResult::ErrorFunctionArgMismatch),
-                }
-            });
-
-        let ent = self.fns.entry(name.to_string()).or_insert_with(Vec::new);
-        (*ent).push(FnType::ExternalFn4(wrapped));
-    }
-}
-
-impl<'a, A, T, U, V, W> FnRegister<A, W, (&'a mut T, U, V)> for Engine
-    where A: 'static + Fn(&mut T, U, V) -> W,
-          T: Any,
-          U: Clone + Any,
-          V: Clone + Any,
-          W: Any
-{
-    fn register_fn(&mut self, name: &str, fun: A) {
-        let wrapped: Box<Fn(&mut Box<Any>, &mut Box<Any>, &mut Box<Any>)
-                            -> Result<Box<Any>, EvalAltResult>> =
-            Box::new(move |arg1: &mut Box<Any>, arg2: &mut Box<Any>, arg3: &mut Box<Any>| {
-                let inside1 = (*arg1).downcast_mut() as Option<&mut T>;
-                let inside2 = (*arg2).downcast_mut() as Option<&mut U>;
-                let inside3 = (*arg3).downcast_mut() as Option<&mut V>;
-
-                match (inside1, inside2, inside3) {
-                    (Some(b), Some(c), Some(d)) => {
-                        Ok(Box::new(fun(b, c.clone(), d.clone())) as Box<Any>)
-                    }
-                    _ => Err(EvalAltResult::ErrorFunctionArgMismatch),
-                }
-            });
-
-        let ent = self.fns.entry(name.to_string()).or_insert_with(Vec::new);
-        (*ent).push(FnType::ExternalFn3(wrapped));
-    }
-}
-
-impl<'a, A, T, U, V, W> FnRegister<A, W, (&'a T, U, V)> for Engine
-    where A: 'static + Fn(T, U, V) -> W,
-          T: Clone + Any,
-          U: Clone + Any,
-          V: Clone + Any,
-          W: Any
-{
-    fn register_fn(&mut self, name: &str, fun: A) {
-        let wrapped: Box<Fn(&mut Box<Any>, &mut Box<Any>, &mut Box<Any>)
-                            -> Result<Box<Any>, EvalAltResult>> =
-            Box::new(move |arg1: &mut Box<Any>, arg2: &mut Box<Any>, arg3: &mut Box<Any>| {
-                let inside1 = (*arg1).downcast_mut() as Option<&mut T>;
-                let inside2 = (*arg2).downcast_mut() as Option<&mut U>;
-                let inside3 = (*arg3).downcast_mut() as Option<&mut V>;
-
-                match (inside1, inside2, inside3) {
-                    (Some(b), Some(c), Some(d)) => {
-                        Ok(Box::new(fun(b.clone(), c.clone(), d.clone())) as Box<Any>)
-                    }
-                    _ => Err(EvalAltResult::ErrorFunctionArgMismatch),
-                }
-            });
-
-        let ent = self.fns.entry(name.to_string()).or_insert_with(Vec::new);
-        (*ent).push(FnType::ExternalFn3(wrapped));
-    }
-}
-
-impl<'a, A, T, U, V> FnRegister<A, V, (&'a mut T, U)> for Engine
-    where A: 'static + Fn(&mut T, U) -> V,
-          T: Any,
-          U: Clone + Any,
-          V: Any
-{
-    fn register_fn(&mut self, name: &str, fun: A) {
-        let wrapped: Box<Fn(&mut Box<Any>, &mut Box<Any>) -> Result<Box<Any>, EvalAltResult>> =
-            Box::new(move |arg1: &mut Box<Any>, arg2: &mut Box<Any>| {
-                let inside1 = (*arg1).downcast_mut() as Option<&mut T>;
-                let inside2 = (*arg2).downcast_mut() as Option<&mut U>;
-
-                match (inside1, inside2) {
-                    (Some(b), Some(c)) => Ok(Box::new(fun(b, c.clone())) as Box<Any>),
-                    _ => Err(EvalAltResult::ErrorFunctionArgMismatch),
-                }
-            });
-
-        let ent = self.fns.entry(name.to_string()).or_insert_with(Vec::new);
-        (*ent).push(FnType::ExternalFn2(wrapped));
-    }
-}
-
-impl<'a, A, T, U, V> FnRegister<A, V, (&'a T, U)> for Engine
-    where A: 'static + Fn(T, U) -> V,
-          T: Clone + Any,
-          U: Clone + Any,
-          V: Any
-{
-    fn register_fn(&mut self, name: &str, fun: A) {
-        let wrapped: Box<Fn(&mut Box<Any>, &mut Box<Any>) -> Result<Box<Any>, EvalAltResult>> =
-            Box::new(move |arg1: &mut Box<Any>, arg2: &mut Box<Any>| {
-                let inside1 = (*arg1).downcast_mut() as Option<&mut T>;
-                let inside2 = (*arg2).downcast_mut() as Option<&mut U>;
-
-                match (inside1, inside2) {
-                    (Some(b), Some(c)) => Ok(Box::new(fun(b.clone(), c.clone())) as Box<Any>),
-                    _ => Err(EvalAltResult::ErrorFunctionArgMismatch),
-                }
-            });
-
-        let ent = self.fns.entry(name.to_string()).or_insert_with(Vec::new);
-        (*ent).push(FnType::ExternalFn2(wrapped));
-    }
-}
-
-impl<'a, A, T, U> FnRegister<A, U, (&'a mut T)> for Engine
-    where A: 'static + Fn(&mut T) -> U,
-          T: Any,
-          U: Any
-{
-    fn register_fn(&mut self, name: &str, fun: A) {
-        let wrapped: Box<Fn(&mut Box<Any>) -> Result<Box<Any>, EvalAltResult>> =
-            Box::new(move |arg: &mut Box<Any>| {
-                let inside = (*arg).downcast_mut() as Option<&mut T>;
-
-                match inside {
-                    Some(b) => Ok(Box::new(fun(b)) as Box<Any>),
-                    None => Err(EvalAltResult::ErrorFunctionArgMismatch),
-                }
-            });
-
-        let ent = self.fns.entry(name.to_string()).or_insert_with(Vec::new);
-        (*ent).push(FnType::ExternalFn1(wrapped));
-    }
-}
-
-
-impl<'a, A, T, U> FnRegister<A, U, (&'a T)> for Engine
-    where A: 'static + Fn(T) -> U,
-          T: Clone + Any,
-          U: Any
-{
-    fn register_fn(&mut self, name: &str, fun: A) {
-        let wrapped: Box<Fn(&mut Box<Any>) -> Result<Box<Any>, EvalAltResult>> =
-            Box::new(move |arg: &mut Box<Any>| {
-                let inside = (*arg).downcast_mut() as Option<&mut T>;
-                match inside {
-                    Some(b) => Ok(Box::new(fun(b.clone())) as Box<Any>),
-                    None => Err(EvalAltResult::ErrorFunctionArgMismatch),
-                }
-            });
-
-        let ent = self.fns.entry(name.to_string()).or_insert_with(Vec::new);
-        (*ent).push(FnType::ExternalFn1(wrapped));
-    }
-}
-
-impl<A, T> FnRegister<A, T, ()> for Engine
-    where A: 'static + Fn() -> T,
-          T: Any
-{
-    fn register_fn(&mut self, name: &str, fun: A) {
-        let wrapped: Box<Fn() -> Result<Box<Any>, EvalAltResult>> = Box::new(move || {
-            Ok(Box::new(fun()) as Box<Any>)
-        });
-
-        let ent = self.fns.entry(name.to_string()).or_insert_with(Vec::new);
-        (*ent).push(FnType::ExternalFn0(wrapped));
-    }
-}
+#[cfg_attr(rustfmt, rustfmt_skip)]
+def_register!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z);

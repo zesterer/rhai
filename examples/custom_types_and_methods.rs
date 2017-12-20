@@ -3,7 +3,7 @@ use rhai::{Engine, FnRegister};
 
 #[derive(Clone)]
 struct TestStruct {
-    x: i64
+    x: i64,
 }
 
 impl TestStruct {
