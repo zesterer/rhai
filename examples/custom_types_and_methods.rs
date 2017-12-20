@@ -1,5 +1,5 @@
 extern crate rhai;
-use rhai::{Engine, FnRegister};
+use rhai::{Engine, RegisterFn};
 
 #[derive(Clone)]
 struct TestStruct {

@@ -27,6 +27,28 @@ pub enum EvalAltResult {
     Return(Box<Any>),
 }
 
+impl PartialEq for EvalAltResult {
+    fn eq(&self, other: &Self) -> bool {
+        use EvalAltResult::*;
+
+        match (self, other) {
+            (&ErrorFunctionNotFound, &ErrorFunctionNotFound) => true,
+            (&ErrorFunctionArgMismatch, &ErrorFunctionArgMismatch) => true,
+            (&ErrorFunctionCallNotSupported, &ErrorFunctionCallNotSupported) => true,
+            (&ErrorIndexMismatch, &ErrorIndexMismatch) => true,
+            (&ErrorIfGuardMismatch, &ErrorIfGuardMismatch) => true,
+            (&ErrorVariableNotFound(ref a), &ErrorVariableNotFound(ref b)) => a == b,
+            (&ErrorFunctionArityNotSupported, &ErrorFunctionArityNotSupported) => true,
+            (&ErrorAssignmentToUnknownLHS, &ErrorAssignmentToUnknownLHS) => true,
+            (&ErrorMismatchOutputType, &ErrorMismatchOutputType) => true,
+            (&ErrorCantOpenScriptFile, &ErrorCantOpenScriptFile) => true,
+            (&InternalErrorMalformedDotExpression, &InternalErrorMalformedDotExpression) => true,
+            (&LoopBreak, &LoopBreak) => true,
+            _ => false,
+        }
+    }
+}
+
 impl Error for EvalAltResult {
     fn description(&self) -> &str {
         match *self {
@@ -121,6 +143,12 @@ impl Engine {
         ident: String,
         args: Vec<&mut Box<Any>>,
     ) -> Result<Box<Any>, EvalAltResult> {
+        println!(
+            "Trying to call function {:?} with args {:?}",
+            ident,
+            args.iter().map(|x| (***x).type_id()).collect::<Vec<_>>()
+        );
+
         let spec = FnSpec {
             ident: ident.clone(),
             args: Some(
@@ -137,11 +165,26 @@ impl Engine {
             .ok_or(EvalAltResult::ErrorFunctionNotFound)
             .and_then(move |f| match *f {
                 FnIntExt::Ext(ref f) => f(args),
-                FnIntExt::Int(_) => unreachable!(),
+                FnIntExt::Int(ref f) => {
+                    let mut scope = Scope::new();
+                    scope.extend(
+                        f.params
+                            .iter()
+                            .cloned()
+                            .zip(args.iter().map(|x| (&**x).clone())),
+                    );
+
+                    match self.eval_stmt(&mut scope, &*f.body) {
+                        Err(EvalAltResult::Return(x)) => Ok(x),
+                        other => other,
+                    }
+                }
             })
     }
 
     pub fn register_fn_raw(&mut self, ident: String, args: Option<Vec<TypeId>>, f: Box<FnAny>) {
+        println!("Register; {:?} with args {:?}", ident, args,);
+
         let spec = FnSpec { ident, args };
 
         self.fns.insert(spec, FnIntExt::Ext(f));
@@ -247,7 +290,12 @@ impl Engine {
             .and_then(move |(idx, &mut (_, ref mut val))| map(val).map(|val| (idx, val)))
     }
 
-    fn array_value(&self, scope: &mut Scope, id: &str, idx: &Expr) -> Result<(usize, usize, Box<Any>), EvalAltResult> {
+    fn array_value(
+        &self,
+        scope: &mut Scope,
+        id: &str,
+        idx: &Expr,
+    ) -> Result<(usize, usize, Box<Any>), EvalAltResult> {
         let idx_boxed = self.eval_expr(scope, idx)?
             .downcast::<i64>()
             .map_err(|_| EvalAltResult::ErrorIndexMismatch)?;
@@ -307,7 +355,10 @@ impl Engine {
                 Expr::Identifier(ref id) => {
                     let get_fn_name = "get$".to_string() + id;
                     self.call_fn_raw(get_fn_name, vec![this_ptr])
-                        .and_then(|mut v| self.set_dot_val_helper(&mut v, inner_rhs, source_val))
+                        .and_then(|mut v| {
+                            self.set_dot_val_helper(&mut v, inner_rhs, source_val)
+                                .map(|_| v) // Discard Ok return value
+                        })
                         .and_then(|mut v| {
                             let set_fn_name = "set$".to_string() + id;
 

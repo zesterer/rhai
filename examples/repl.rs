@@ -3,7 +3,7 @@ extern crate rhai;
 use std::fmt::Display;
 use std::process::exit;
 use std::io::{stdin, stdout, Write};
-use rhai::{Engine, FnRegister, Scope};
+use rhai::{Engine, RegisterFn, Scope};
 
 fn showit<T: Display>(x: &mut T) -> () {
     println!("{}", x)

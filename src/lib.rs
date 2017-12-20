@@ -17,7 +17,7 @@
 //! And the Rust part:
 //!
 //! ```rust
-//! use rhai::{FnRegister, Engine};
+//! use rhai::{Engine, RegisterFn};
 //!
 //! fn compute_something(x: i64) -> bool {
 //!	    (x % 40) == 0

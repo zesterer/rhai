@@ -2,7 +2,7 @@ use std::env;
 use std::fmt::Display;
 
 extern crate rhai;
-use rhai::{Engine, FnRegister};
+use rhai::{Engine, RegisterFn};
 
 fn showit<T: Display>(x: &mut T) -> () {
     println!("{}", x)

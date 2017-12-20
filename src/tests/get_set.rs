@@ -1,5 +1,5 @@
 use engine::Engine;
-use fn_register::FnRegister;
+use fn_register::RegisterFn;
 
 #[test]
 fn test_get_set() {
@@ -86,9 +86,5 @@ fn test_big_get_set() {
 
     engine.register_fn("new_tp", TestParent::new);
 
-    if let Ok(result) = engine.eval::<i64>("let a = new_tp(); a.child.x = 500; a.child.x") {
-        assert_eq!(result, 500);
-    } else {
-        assert!(false);
-    }
+    assert_eq!(engine.eval::<i64>("let a = new_tp(); a.child.x = 500; a.child.x"), Ok(500));
 }

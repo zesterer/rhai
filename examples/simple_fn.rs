@@ -1,5 +1,5 @@
 extern crate rhai;
-use rhai::{Any, Engine, RegisterFn};
+use rhai::{Engine, RegisterFn};
 
 fn add(x: i64, y: i64) -> i64 {
     x + y
