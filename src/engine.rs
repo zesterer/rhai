@@ -122,28 +122,27 @@ impl Engine {
         args: Vec<&mut Box<Any>>,
     ) -> Result<Box<Any>, EvalAltResult> {
         let spec = FnSpec {
-            ident,
+            ident: ident.clone(),
             args: Some(
                 args.iter()
                     .map(|a| <Any as Any>::type_id(a.as_ref()))
                     .collect(),
             ),
         };
+        let spec1 = FnSpec { ident, args: None };
 
         self.fns
             .get(&spec)
+            .or_else(|| self.fns.get(&spec1))
             .ok_or(EvalAltResult::ErrorFunctionNotFound)
             .and_then(move |f| match *f {
                 FnIntExt::Ext(ref f) => f(args),
-                FnIntExt::Int(_) => unimplemented!(),
+                FnIntExt::Int(_) => unreachable!(),
             })
     }
 
-    pub fn register_fn_raw(&mut self, ident: String, args: Vec<TypeId>, f: Box<FnAny>) {
-        let spec = FnSpec {
-            ident,
-            args: Some(args),
-        };
+    pub fn register_fn_raw(&mut self, ident: String, args: Option<Vec<TypeId>>, f: Box<FnAny>) {
+        let spec = FnSpec { ident, args };
 
         self.fns.insert(spec, FnIntExt::Ext(f));
     }
@@ -152,6 +151,7 @@ impl Engine {
     /// your type must implement Clone.
     pub fn register_type<T: Any>(&mut self) {
         // currently a no-op, exists for future extensibility
+        println!("Registering {:?}", TypeId::of::<T>());
     }
 
     /// Register a get function for a member of a registered type
@@ -216,7 +216,7 @@ impl Engine {
 
                 ((*val).downcast_mut() as Option<&mut Vec<Box<Any>>>)
                     .and_then(|arr| idx.downcast_ref::<i64>().map(|idx| (arr, *idx as usize)))
-                    .map(|(arr, idx)| arr[idx].box_clone())
+                    .map(|(arr, idx)| arr[idx].clone())
                     .ok_or(EvalAltResult::ErrorIndexMismatch)
             }
             Expr::Dot(ref inner_lhs, ref inner_rhs) => match **inner_lhs {
@@ -243,7 +243,7 @@ impl Engine {
                     .iter_mut()
                     .rev()
                     .find(|&&mut (ref name, _)| *id == *name)
-                    .map(|&mut (_, ref mut val)| val.as_ref().box_clone())
+                    .map(|&mut (_, ref mut val)| val.clone())
                     .ok_or_else(|| EvalAltResult::ErrorVariableNotFound(id.clone()))
                     .and_then(|mut target| self.get_dot_val_helper(scope, &mut target, dot_rhs))
 
@@ -283,7 +283,7 @@ impl Engine {
                             .and_then(|arr| {
                                 idx_boxed
                                     .downcast_ref::<i64>()
-                                    .map(|idx| arr[*idx as usize].box_clone())
+                                    .map(|idx| arr[*idx as usize].clone())
                             })
                             .ok_or(EvalAltResult::ErrorIndexMismatch)
                     })
@@ -455,7 +455,7 @@ impl Engine {
             Expr::Identifier(ref id) => {
                 for &mut (ref name, ref mut val) in &mut scope.iter_mut().rev() {
                     if *id == *name {
-                        return Ok(val.box_clone());
+                        return Ok(val.clone());
                     }
                 }
                 Err(EvalAltResult::ErrorVariableNotFound(id.clone()))
@@ -469,7 +469,7 @@ impl Engine {
                             if let Some(arr_typed) =
                                 (*val).downcast_mut() as Option<&mut Vec<Box<Any>>>
                             {
-                                return Ok(arr_typed[*i as usize].box_clone());
+                                return Ok(arr_typed[*i as usize].clone());
                             } else {
                                 return Err(EvalAltResult::ErrorIndexMismatch);
                             }
@@ -688,9 +688,6 @@ impl Engine {
                 let mut x: Result<Box<Any>, EvalAltResult> = Ok(Box::new(()));
 
                 for f in fns {
-                    if f.params.len() > 6 {
-                        return Err(EvalAltResult::ErrorFunctionArityNotSupported);
-                    }
                     let name = f.name.clone();
                     let local_f = f.clone();
 
@@ -709,12 +706,11 @@ impl Engine {
                     }
                 }
 
-                match x {
-                    Ok(v) => match v.downcast::<T>() {
-                        Ok(out) => Ok(*out),
-                        Err(_) => Err(EvalAltResult::ErrorMismatchOutputType),
-                    },
-                    Err(e) => Err(e),
+                let x = x?;
+
+                match x.downcast::<T>() {
+                    Ok(out) => Ok(*out),
+                    Err(_) => Err(EvalAltResult::ErrorMismatchOutputType),
                 }
             }
             Err(_) => Err(EvalAltResult::ErrorFunctionArgMismatch),

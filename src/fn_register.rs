@@ -45,7 +45,7 @@ macro_rules! def_register {
                     // potentially clone the value, otherwise pass the reference.
                     Ok(Box::new(f($(($clone)($par)),*)) as Box<Any>)
                 };
-                self.register_fn_raw(name.to_owned(), vec![$(TypeId::of::<$par>()),*], Box::new(fun));
+                self.register_fn_raw(name.to_owned(), Some(vec![$(TypeId::of::<$par>()),*]), Box::new(fun));
             }
         }
 
