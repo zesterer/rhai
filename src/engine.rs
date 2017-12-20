@@ -9,6 +9,7 @@ use std::ops::{Add, BitAnd, BitOr, BitXor, Deref, Div, Mul, Neg, Rem, Shl, Shr, 
 use any::{Any, AnyExt};
 use fn_register::{Mut, RegisterFn};
 use parser::{lex, parse, Expr, FnDef, Stmt};
+use call::FunArgs;
 
 #[derive(Debug)]
 pub enum EvalAltResult {
@@ -136,6 +137,20 @@ pub type FnAny = Fn(Vec<&mut Any>) -> Result<Box<Any>, EvalAltResult>;
 pub type Scope = Vec<(String, Box<Any>)>;
 
 impl Engine {
+    pub fn call_fn<'a, I, A, T>(&self, ident: I, args: A) -> Result<T, EvalAltResult>
+    where
+        I: Into<String>,
+        A: FunArgs<'a>,
+        T: Any + Clone,
+    {
+        self.call_fn_raw(ident.into(), args.into_vec())
+            .and_then(|b| {
+                b.downcast()
+                    .map(|b| *b)
+                    .map_err(|_| EvalAltResult::ErrorMismatchOutputType)
+            })
+    }
+
     /// Universal method for calling functions, that are either
     /// registered with the `Engine` or written in Rhai
     pub fn call_fn_raw(
@@ -151,11 +166,7 @@ impl Engine {
 
         let spec = FnSpec {
             ident: ident.clone(),
-            args: Some(
-                args.iter()
-                    .map(|a| <Any as Any>::type_id(&**a))
-                    .collect(),
-            ),
+            args: Some(args.iter().map(|a| <Any as Any>::type_id(&**a)).collect()),
         };
         let spec1 = FnSpec { ident, args: None };
 
@@ -241,7 +252,9 @@ impl Engine {
                 let mut args: Vec<Box<Any>> = args.iter()
                     .map(|arg| self.eval_expr(scope, arg))
                     .collect::<Result<Vec<_>, _>>()?;
-                let args = once(this_ptr).chain(args.iter_mut().map(|b| b.as_mut())).collect();
+                let args = once(this_ptr)
+                    .chain(args.iter_mut().map(|b| b.as_mut()))
+                    .collect();
 
                 self.call_fn_raw(fn_name.to_owned(), args)
             }
