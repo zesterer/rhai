@@ -230,6 +230,37 @@ impl Engine {
         }
     }
 
+    fn search_scope<'a, F, T>(
+        scope: &'a mut Scope,
+        id: &str,
+        map: F,
+    ) -> Result<(usize, T), EvalAltResult>
+    where
+        F: FnOnce(&'a mut Box<Any>) -> Result<T, EvalAltResult>,
+    {
+        scope
+            .iter_mut()
+            .enumerate()
+            .rev()
+            .find(|&(_, &mut (ref name, _))| *id == *name)
+            .ok_or_else(|| EvalAltResult::ErrorVariableNotFound(id.to_owned()))
+            .and_then(move |(idx, &mut (_, ref mut val))| map(val).map(|val| (idx, val)))
+    }
+
+    fn array_value(&self, scope: &mut Scope, id: &str, idx: &Expr) -> Result<(usize, usize, Box<Any>), EvalAltResult> {
+        let idx_boxed = self.eval_expr(scope, idx)?
+            .downcast::<i64>()
+            .map_err(|_| EvalAltResult::ErrorIndexMismatch)?;
+        let idx = *idx_boxed as usize;
+        let (idx_sc, val) = Self::search_scope(scope, id, |val| {
+            ((*val).downcast_mut() as Option<&mut Vec<Box<Any>>>)
+                .map(|arr| arr[idx].clone())
+                .ok_or(EvalAltResult::ErrorIndexMismatch)
+        })?;
+
+        Ok((idx_sc, idx, val))
+    }
+
     fn get_dot_val(
         &self,
         scope: &mut Scope,
@@ -238,100 +269,24 @@ impl Engine {
     ) -> Result<Box<Any>, EvalAltResult> {
         match *dot_lhs {
             Expr::Identifier(ref id) => {
-                scope
-                    .iter_mut()
-                    .rev()
-                    .find(|&&mut (ref name, _)| *id == *name)
-                    .map(|&mut (_, ref mut val)| val.clone())
-                    .ok_or_else(|| EvalAltResult::ErrorVariableNotFound(id.clone()))
-                    .and_then(|mut target| self.get_dot_val_helper(scope, &mut target, dot_rhs))
+                let (sc_idx, mut target) = Self::search_scope(scope, id, |x| Ok(x.clone()))?;
+                let value = self.get_dot_val_helper(scope, &mut target, dot_rhs);
 
-                //                let mut target: Option<Box<Any>> = None;
-                //
-                //                for &mut (ref name, ref mut val) in &mut scope.iter_mut().rev() {
-                //                    if *id == *name {
-                //                        target = val.as_ref().box_clone();
-                //                        break;
-                //                    }
-                //                }
-                //
-                //                if let Some(mut t) = target {
-                //                    let result = self.get_dot_val_helper(scope, &mut t, dot_rhs);
-                //
-                //                    for &mut (ref name, ref mut val) in &mut scope.iter_mut().rev() {
-                //                        if *id == *name {
-                //                            *val = t;
-                //                            break;
-                //                        }
-                //                    }
-                //                    return result;
-                //                }
-                //
-                //                Err(EvalAltResult::ErrorVariableNotFound(id.clone()))
+                // In case the expression mutated `target`, we need to reassign it because
+                // of the above `clone`.
+                scope[sc_idx].1 = target;
+
+                value
             }
             Expr::Index(ref id, ref idx_raw) => {
-                let idx_boxed = self.eval_expr(scope, idx_raw)?;
+                let (sc_idx, idx, mut target) = self.array_value(scope, id, idx_raw)?;
+                let value = self.get_dot_val_helper(scope, &mut target, dot_rhs);
 
-                scope
-                    .iter_mut()
-                    .rev()
-                    .find(|&&mut (ref name, _)| *id == *name)
-                    .ok_or_else(|| EvalAltResult::ErrorVariableNotFound(id.clone()))
-                    .and_then(|&mut (_, ref mut val)| {
-                        ((*val).downcast_mut() as Option<&mut Vec<Box<Any>>>)
-                            .and_then(|arr| {
-                                idx_boxed
-                                    .downcast_ref::<i64>()
-                                    .map(|idx| arr[*idx as usize].clone())
-                            })
-                            .ok_or(EvalAltResult::ErrorIndexMismatch)
-                    })
-                    .and_then(|mut target| self.get_dot_val_helper(scope, &mut target, dot_rhs))
+                // In case the expression mutated `target`, we need to reassign it because
+                // of the above `clone`.
+                scope[sc_idx].1.downcast_mut::<Vec<Box<Any>>>().unwrap()[idx] = target;
 
-                //                let mut target: Option<Box<Any>> = None;
-                //
-                //                for &mut (ref name, ref mut val) in &mut scope.iter_mut().rev() {
-                //                    if *id == *name {
-                //                        if let Some(arr_typed) = (*val).downcast_mut() as Option<&mut Vec<Box<Any>>>
-                //                        {
-                //                            let result = self.call_fn(
-                //                                "clone",
-                //                                Some(&mut arr_typed[*idx as usize]),
-                //                                None,
-                //                                None,
-                //                                None,
-                //                                None,
-                //                                None,
-                //                            );
-                //
-                //                            if let Ok(clone) = result {
-                //                                target = Some(clone);
-                //                                break;
-                //                            } else {
-                //                                return result;
-                //                            }
-                //                        } else {
-                //                            return Err(EvalAltResult::ErrorIndexMismatch);
-                //                        }
-                //                    }
-                //                }
-                //
-                //                if let Some(mut t) = target {
-                //                    let result = self.get_dot_val_helper(scope, &mut t, dot_rhs);
-                //                    for &mut (ref name, ref mut val) in &mut scope.iter_mut().rev() {
-                //                        if *id == *name {
-                //                            if let Some(arr_typed) =
-                //                                (*val).downcast_mut() as Option<&mut Vec<Box<Any>>>
-                //                            {
-                //                                arr_typed[*idx as usize] = t;
-                //                                break;
-                //                            }
-                //                        }
-                //                    }
-                //                    return result;
-                //                }
-                //
-                //                Err(EvalAltResult::ErrorVariableNotFound(id.clone()))
+                value
             }
             _ => Err(EvalAltResult::InternalErrorMalformedDotExpression),
         }
@@ -374,72 +329,24 @@ impl Engine {
     ) -> Result<Box<Any>, EvalAltResult> {
         match *dot_lhs {
             Expr::Identifier(ref id) => {
-                let mut target: Option<Box<Any>> = None;
+                let (sc_idx, mut target) = Self::search_scope(scope, id, |x| Ok(x.clone()))?;
+                let value = self.set_dot_val_helper(&mut target, dot_rhs, source_val);
 
-                for &mut (ref name, ref mut val) in &mut scope.iter_mut().rev() {
-                    if *id == *name {
-                        target = Some(val.clone())
-                    }
-                }
+                // In case the expression mutated `target`, we need to reassign it because
+                // of the above `clone`.
+                scope[sc_idx].1 = target;
 
-                if let Some(mut t) = target {
-                    let result = self.set_dot_val_helper(&mut t, dot_rhs, source_val);
-
-                    for &mut (ref name, ref mut val) in &mut scope.iter_mut().rev() {
-                        if *id == *name {
-                            *val = t;
-                            break;
-                        }
-                    }
-                    return result;
-                }
-
-                Err(EvalAltResult::ErrorAssignmentToUnknownLHS)
+                value
             }
             Expr::Index(ref id, ref idx_raw) => {
-                let idx_boxed = self.eval_expr(scope, idx_raw)?;
-                let idx = if let Some(i) = idx_boxed.downcast_ref::<i64>() {
-                    *i as usize
-                } else {
-                    return Err(EvalAltResult::ErrorIndexMismatch);
-                };
+                let (sc_idx, idx, mut target) = self.array_value(scope, id, idx_raw)?;
+                let value = self.set_dot_val_helper(&mut target, dot_rhs, source_val);
 
-                let mut target: Option<Box<Any>> = None;
+                // In case the expression mutated `target`, we need to reassign it because
+                // of the above `clone`.
+                scope[sc_idx].1.downcast_mut::<Vec<Box<Any>>>().unwrap()[idx] = target;
 
-                for &mut (ref name, ref mut val) in &mut scope.iter_mut().rev() {
-                    if *id == *name {
-                        if let Some(arr_typed) = (*val).downcast_mut() as Option<&mut Vec<Box<Any>>>
-                        {
-                            let result = Ok(arr_typed[idx].clone());
-
-                            if let Ok(clone) = result {
-                                target = Some(clone);
-                                break;
-                            } else {
-                                return result;
-                            }
-                        } else {
-                            return Err(EvalAltResult::ErrorIndexMismatch);
-                        }
-                    }
-                }
-
-                if let Some(mut t) = target {
-                    let result = self.set_dot_val_helper(&mut t, dot_rhs, source_val);
-                    for &mut (ref name, ref mut val) in &mut scope.iter_mut().rev() {
-                        if *id == *name {
-                            if let Some(arr_typed) =
-                                (*val).downcast_mut() as Option<&mut Vec<Box<Any>>>
-                            {
-                                arr_typed[idx] = t;
-                                break;
-                            }
-                        }
-                    }
-                    return result;
-                }
-
-                Err(EvalAltResult::ErrorVariableNotFound(id.clone()))
+                value
             }
             _ => Err(EvalAltResult::InternalErrorMalformedDotExpression),
         }
@@ -460,25 +367,7 @@ impl Engine {
                 Err(EvalAltResult::ErrorVariableNotFound(id.clone()))
             }
             Expr::Index(ref id, ref idx_raw) => {
-                let idx = self.eval_expr(scope, idx_raw)?;
-
-                for &mut (ref name, ref mut val) in &mut scope.iter_mut().rev() {
-                    if *id == *name {
-                        if let Some(i) = idx.downcast_ref::<i64>() {
-                            if let Some(arr_typed) =
-                                (*val).downcast_mut() as Option<&mut Vec<Box<Any>>>
-                            {
-                                return Ok(arr_typed[*i as usize].clone());
-                            } else {
-                                return Err(EvalAltResult::ErrorIndexMismatch);
-                            }
-                        } else {
-                            return Err(EvalAltResult::ErrorIndexMismatch);
-                        }
-                    }
-                }
-
-                Err(EvalAltResult::ErrorVariableNotFound(id.clone()))
+                self.array_value(scope, id, idx_raw).map(|(_, _, x)| x)
             }
             Expr::Assignment(ref id, ref rhs) => {
                 let rhs_val = self.eval_expr(scope, rhs)?;
