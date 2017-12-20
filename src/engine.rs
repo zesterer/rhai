@@ -151,7 +151,6 @@ impl Engine {
     /// your type must implement Clone.
     pub fn register_type<T: Any>(&mut self) {
         // currently a no-op, exists for future extensibility
-        println!("Registering {:?}", TypeId::of::<T>());
     }
 
     /// Register a get function for a member of a registered type
@@ -947,11 +946,7 @@ impl Engine {
             fns: HashMap::new(),
         };
 
-        // TODO
-        // TODO
-        // TODO
-        // TODO
-        //Engine::register_default_lib(&mut engine);
+        Engine::register_default_lib(&mut engine);
 
         engine
     }

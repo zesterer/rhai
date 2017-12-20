@@ -1,5 +1,5 @@
 extern crate rhai;
-use rhai::{Any, Engine, EvalAltResult, RegisterFn};
+use rhai::{Engine, RegisterFn};
 
 #[derive(Clone, Debug)]
 struct TestStruct {
@@ -16,22 +16,13 @@ impl TestStruct {
     }
 }
 
-fn print_ty_name(test: Vec<&mut Box<Any>>) -> Result<Box<Any>, EvalAltResult> {
-    println!("Ty name: {:?}", (*test[0]).as_ref().type_name());
-
-    Ok(Box::new(()))
-}
-
 fn main() {
     let mut engine = Engine::new();
 
     engine.register_type::<TestStruct>();
 
-    print_ty_name(vec![&mut (Box::new(TestStruct::new()) as Box<Any>)]).unwrap();
-
     engine.register_fn("update", TestStruct::update);
     engine.register_fn("new_ts", TestStruct::new);
-    engine.register_fn_raw("ty_name".to_owned(), None, Box::new(print_ty_name));
 
     println!(
         "{:?}",
