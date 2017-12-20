@@ -27,7 +27,7 @@ macro_rules! def_register {
             RET: Any,
         {
             fn register_fn(&mut self, name: &str, f: FN) {
-                let fun = move |mut args: Vec<&mut Box<Any>>| {
+                let fun = move |mut args: Vec<&mut Any>| {
                     // Check for length at the beginning to avoid
                     // per-element bound checks.
                     if args.len() != count_args!($($par)*) {

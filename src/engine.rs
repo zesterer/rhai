@@ -117,7 +117,7 @@ pub enum FnIntExt {
     Int(FnDef),
 }
 
-pub type FnAny = Fn(Vec<&mut Box<Any>>) -> Result<Box<Any>, EvalAltResult>;
+pub type FnAny = Fn(Vec<&mut Any>) -> Result<Box<Any>, EvalAltResult>;
 
 /// A type containing information about current scope.
 /// Useful for keeping state between `Engine` runs
@@ -141,19 +141,19 @@ impl Engine {
     pub fn call_fn_raw(
         &self,
         ident: String,
-        args: Vec<&mut Box<Any>>,
+        args: Vec<&mut Any>,
     ) -> Result<Box<Any>, EvalAltResult> {
         println!(
             "Trying to call function {:?} with args {:?}",
             ident,
-            args.iter().map(|x| (***x).type_id()).collect::<Vec<_>>()
+            args.iter().map(|x| (&**x).type_id()).collect::<Vec<_>>()
         );
 
         let spec = FnSpec {
             ident: ident.clone(),
             args: Some(
                 args.iter()
-                    .map(|a| <Any as Any>::type_id(a.as_ref()))
+                    .map(|a| <Any as Any>::type_id(&**a))
                     .collect(),
             ),
         };
@@ -171,7 +171,7 @@ impl Engine {
                         f.params
                             .iter()
                             .cloned()
-                            .zip(args.iter().map(|x| (&**x).clone())),
+                            .zip(args.iter().map(|x| (&**x).box_clone())),
                     );
 
                     match self.eval_stmt(&mut scope, &*f.body) {
@@ -231,17 +231,17 @@ impl Engine {
     fn get_dot_val_helper(
         &self,
         scope: &mut Scope,
-        this_ptr: &mut Box<Any>,
+        this_ptr: &mut Any,
         dot_rhs: &Expr,
     ) -> Result<Box<Any>, EvalAltResult> {
         use std::iter::once;
 
         match *dot_rhs {
             Expr::FnCall(ref fn_name, ref args) => {
-                let mut args: Vec<_> = args.iter()
+                let mut args: Vec<Box<Any>> = args.iter()
                     .map(|arg| self.eval_expr(scope, arg))
                     .collect::<Result<Vec<_>, _>>()?;
-                let args = once(this_ptr).chain(args.iter_mut()).collect();
+                let args = once(this_ptr).chain(args.iter_mut().map(|b| b.as_mut())).collect();
 
                 self.call_fn_raw(fn_name.to_owned(), args)
             }
@@ -265,7 +265,7 @@ impl Engine {
                 Expr::Identifier(ref id) => {
                     let get_fn_name = "get$".to_string() + id;
                     self.call_fn_raw(get_fn_name, vec![this_ptr])
-                        .and_then(|mut v| self.get_dot_val_helper(scope, &mut v, inner_rhs))
+                        .and_then(|mut v| self.get_dot_val_helper(scope, v.as_mut(), inner_rhs))
                 }
                 _ => Err(EvalAltResult::InternalErrorMalformedDotExpression),
             },
@@ -279,7 +279,7 @@ impl Engine {
         map: F,
     ) -> Result<(usize, T), EvalAltResult>
     where
-        F: FnOnce(&'a mut Box<Any>) -> Result<T, EvalAltResult>,
+        F: FnOnce(&'a mut Any) -> Result<T, EvalAltResult>,
     {
         scope
             .iter_mut()
@@ -287,7 +287,7 @@ impl Engine {
             .rev()
             .find(|&(_, &mut (ref name, _))| *id == *name)
             .ok_or_else(|| EvalAltResult::ErrorVariableNotFound(id.to_owned()))
-            .and_then(move |(idx, &mut (_, ref mut val))| map(val).map(|val| (idx, val)))
+            .and_then(move |(idx, &mut (_, ref mut val))| map(val.as_mut()).map(|val| (idx, val)))
     }
 
     fn array_value(
@@ -317,8 +317,8 @@ impl Engine {
     ) -> Result<Box<Any>, EvalAltResult> {
         match *dot_lhs {
             Expr::Identifier(ref id) => {
-                let (sc_idx, mut target) = Self::search_scope(scope, id, |x| Ok(x.clone()))?;
-                let value = self.get_dot_val_helper(scope, &mut target, dot_rhs);
+                let (sc_idx, mut target) = Self::search_scope(scope, id, |x| Ok(x.box_clone()))?;
+                let value = self.get_dot_val_helper(scope, target.as_mut(), dot_rhs);
 
                 // In case the expression mutated `target`, we need to reassign it because
                 // of the above `clone`.
@@ -328,7 +328,7 @@ impl Engine {
             }
             Expr::Index(ref id, ref idx_raw) => {
                 let (sc_idx, idx, mut target) = self.array_value(scope, id, idx_raw)?;
-                let value = self.get_dot_val_helper(scope, &mut target, dot_rhs);
+                let value = self.get_dot_val_helper(scope, target.as_mut(), dot_rhs);
 
                 // In case the expression mutated `target`, we need to reassign it because
                 // of the above `clone`.
@@ -342,27 +342,27 @@ impl Engine {
 
     fn set_dot_val_helper(
         &self,
-        this_ptr: &mut Box<Any>,
+        this_ptr: &mut Any,
         dot_rhs: &Expr,
         mut source_val: Box<Any>,
     ) -> Result<Box<Any>, EvalAltResult> {
         match *dot_rhs {
             Expr::Identifier(ref id) => {
                 let set_fn_name = "set$".to_string() + id;
-                self.call_fn_raw(set_fn_name, vec![this_ptr, &mut source_val])
+                self.call_fn_raw(set_fn_name, vec![this_ptr, source_val.as_mut()])
             }
             Expr::Dot(ref inner_lhs, ref inner_rhs) => match **inner_lhs {
                 Expr::Identifier(ref id) => {
                     let get_fn_name = "get$".to_string() + id;
                     self.call_fn_raw(get_fn_name, vec![this_ptr])
                         .and_then(|mut v| {
-                            self.set_dot_val_helper(&mut v, inner_rhs, source_val)
+                            self.set_dot_val_helper(v.as_mut(), inner_rhs, source_val)
                                 .map(|_| v) // Discard Ok return value
                         })
                         .and_then(|mut v| {
                             let set_fn_name = "set$".to_string() + id;
 
-                            self.call_fn_raw(set_fn_name, vec![this_ptr, &mut v])
+                            self.call_fn_raw(set_fn_name, vec![this_ptr, v.as_mut()])
                         })
                 }
                 _ => Err(EvalAltResult::InternalErrorMalformedDotExpression),
@@ -380,8 +380,8 @@ impl Engine {
     ) -> Result<Box<Any>, EvalAltResult> {
         match *dot_lhs {
             Expr::Identifier(ref id) => {
-                let (sc_idx, mut target) = Self::search_scope(scope, id, |x| Ok(x.clone()))?;
-                let value = self.set_dot_val_helper(&mut target, dot_rhs, source_val);
+                let (sc_idx, mut target) = Self::search_scope(scope, id, |x| Ok(x.box_clone()))?;
+                let value = self.set_dot_val_helper(target.as_mut(), dot_rhs, source_val);
 
                 // In case the expression mutated `target`, we need to reassign it because
                 // of the above `clone`.
@@ -391,7 +391,7 @@ impl Engine {
             }
             Expr::Index(ref id, ref idx_raw) => {
                 let (sc_idx, idx, mut target) = self.array_value(scope, id, idx_raw)?;
-                let value = self.set_dot_val_helper(&mut target, dot_rhs, source_val);
+                let value = self.set_dot_val_helper(target.as_mut(), dot_rhs, source_val);
 
                 // In case the expression mutated `target`, we need to reassign it because
                 // of the above `clone`.
@@ -477,8 +477,9 @@ impl Engine {
                 fn_name.to_owned(),
                 args.iter()
                     .map(|ex| self.eval_expr(scope, ex))
-                    .collect::<Result<Vec<_>, _>>()?
+                    .collect::<Result<Vec<Box<Any>>, _>>()?
                     .iter_mut()
+                    .map(|b| b.as_mut())
                     .collect(),
             ),
             Expr::True => Ok(Box::new(true)),

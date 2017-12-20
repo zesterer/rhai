@@ -41,6 +41,7 @@
          needless_pass_by_value, too_many_arguments)]
 
 mod any;
+mod call;
 mod engine;
 mod fn_register;
 mod parser;
