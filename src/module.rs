@@ -37,9 +37,6 @@ pub enum ModuleError {
     InvalidFilename,
 }
 
-// TODO - wrap Module in ArcMutex
-//pub struct Module(Arc<Mutex<InnerModule>>);
-
 impl Error for ModuleError {
     fn description(&self) -> &str {
         use ModuleError::*;
