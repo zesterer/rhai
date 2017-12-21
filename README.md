@@ -12,7 +12,7 @@ Rhai's current feature set:
 * No additional dependencies
 * No unsafe code
 
-**Note:** Currently, the version is 0.7.1, so the language and APIs may change before they stabilize.*
+**Note:** Currently, the version is 0.8.0, so the language and APIs may change before they stabilize.*
 
 ## Installation
 
@@ -20,7 +20,7 @@ You can install Rhai using crates by adding this line to your dependences:
 
 ```
 [dependencies]
-rhai = "0.7.1"
+rhai = "0.8.0"
 ```
 
 ## Related
@@ -96,7 +96,7 @@ Rhai's scripting engine is very lightweight.  It gets its ability from the funct
 
 ```rust
 extern crate rhai;
-use rhai::{Engine, FnRegister};
+use rhai::{Engine, RegisterFn};
 
 fn add(x: i64, y: i64) -> i64 {
     x + y
@@ -121,7 +121,7 @@ Generic functions can be used in Rhai, but you'll need to register separate inst
 use std::fmt::Display;
 
 extern crate rhai;
-use rhai::{Engine, FnRegister};
+use rhai::{Engine, RegisterFn};
 
 fn showit<T: Display>(x: &mut T) -> () {
     println!("{}", x)
@@ -144,7 +144,7 @@ Here's an more complete example of working with Rust.  First the example, then w
 
 ```rust
 extern crate rhai;
-use rhai::{Engine, FnRegister};
+use rhai::{Engine, RegisterFn};
 
 #[derive(Clone)]
 struct TestStruct {
@@ -395,7 +395,7 @@ number = -5 - +5;
 let booly = !true;
 ```
 
-## Compount assignment operators
+## Compound assignment operators
 
 ```rust
 let number = 5;
