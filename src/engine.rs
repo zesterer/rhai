@@ -1,14 +1,15 @@
+use std::any::TypeId;
+use std::borrow::Borrow;
+use std::cmp::{PartialEq, PartialOrd};
 use std::collections::HashMap;
 use std::error::Error;
-use std::any::Any;
-use std::boxed::Box;
 use std::fmt;
+use std::ops::{Add, BitAnd, BitOr, BitXor, Deref, Div, Mul, Neg, Rem, Shl, Shr, Sub};
 
-use parser::{lex, parse, Expr, Stmt, FnDef};
-use fn_register::FnRegister;
-
-use std::ops::{Add, Sub, Mul, Div, Neg, BitAnd, BitOr, BitXor, Shl, Shr, Rem};
-use std::cmp::{PartialOrd, PartialEq};
+use any::{Any, AnyExt};
+use fn_register::{Mut, RegisterFn};
+use parser::{lex, parse, Expr, FnDef, Stmt};
+use call::FunArgs;
 
 #[derive(Debug)]
 pub enum EvalAltResult {
@@ -27,6 +28,27 @@ pub enum EvalAltResult {
     Return(Box<Any>),
 }
 
+impl PartialEq for EvalAltResult {
+    fn eq(&self, other: &Self) -> bool {
+        use EvalAltResult::*;
+
+        match (self, other) {
+            (&ErrorFunctionNotFound, &ErrorFunctionNotFound) => true,
+            (&ErrorFunctionArgMismatch, &ErrorFunctionArgMismatch) => true,
+            (&ErrorFunctionCallNotSupported, &ErrorFunctionCallNotSupported) => true,
+            (&ErrorIndexMismatch, &ErrorIndexMismatch) => true,
+            (&ErrorIfGuardMismatch, &ErrorIfGuardMismatch) => true,
+            (&ErrorVariableNotFound(ref a), &ErrorVariableNotFound(ref b)) => a == b,
+            (&ErrorFunctionArityNotSupported, &ErrorFunctionArityNotSupported) => true,
+            (&ErrorAssignmentToUnknownLHS, &ErrorAssignmentToUnknownLHS) => true,
+            (&ErrorMismatchOutputType, &ErrorMismatchOutputType) => true,
+            (&ErrorCantOpenScriptFile, &ErrorCantOpenScriptFile) => true,
+            (&InternalErrorMalformedDotExpression, &InternalErrorMalformedDotExpression) => true,
+            (&LoopBreak, &LoopBreak) => true,
+            _ => false,
+        }
+    }
+}
 
 impl Error for EvalAltResult {
     fn description(&self) -> &str {
@@ -66,29 +88,10 @@ impl fmt::Display for EvalAltResult {
     }
 }
 
-pub enum FnType {
-    ExternalFn0(Box<Fn() -> Result<Box<Any>, EvalAltResult>>),
-    ExternalFn1(Box<Fn(&mut Box<Any>) -> Result<Box<Any>, EvalAltResult>>),
-    ExternalFn2(Box<Fn(&mut Box<Any>, &mut Box<Any>) -> Result<Box<Any>, EvalAltResult>>),
-    ExternalFn3(Box<Fn(&mut Box<Any>, &mut Box<Any>, &mut Box<Any>)
-                       -> Result<Box<Any>, EvalAltResult>>),
-    ExternalFn4(Box<Fn(&mut Box<Any>, &mut Box<Any>, &mut Box<Any>, &mut Box<Any>)
-                       -> Result<Box<Any>, EvalAltResult>>),
-    ExternalFn5(Box<Fn(&mut Box<Any>,
-                       &mut Box<Any>,
-                       &mut Box<Any>,
-                       &mut Box<Any>,
-                       &mut Box<Any>)
-                       -> Result<Box<Any>, EvalAltResult>>),
-    ExternalFn6(Box<Fn(&mut Box<Any>,
-                       &mut Box<Any>,
-                       &mut Box<Any>,
-                       &mut Box<Any>,
-                       &mut Box<Any>,
-                       &mut Box<Any>)
-                       -> Result<Box<Any>, EvalAltResult>>),
-
-    InternalFn(FnDef),
+#[derive(Clone, Debug, Eq, Hash, PartialEq, PartialOrd, Ord)]
+pub struct FnSpec {
+    ident: String,
+    args: Option<Vec<TypeId>>,
 }
 
 /// Rhai's engine type. This is what you use to run Rhai scripts
@@ -107,8 +110,15 @@ pub enum FnType {
 /// ```
 pub struct Engine {
     /// A hashmap containing all functions know to the engine
-    pub fns: HashMap<String, Vec<FnType>>,
+    pub fns: HashMap<FnSpec, FnIntExt>,
 }
+
+pub enum FnIntExt {
+    Ext(Box<FnAny>),
+    Int(FnDef),
+}
+
+pub type FnAny = Fn(Vec<&mut Any>) -> Result<Box<Any>, EvalAltResult>;
 
 /// A type containing information about current scope.
 /// Useful for keeping state between `Engine` runs
@@ -127,820 +137,280 @@ pub struct Engine {
 pub type Scope = Vec<(String, Box<Any>)>;
 
 impl Engine {
+    pub fn call_fn<'a, I, A, T>(&self, ident: I, args: A) -> Result<T, EvalAltResult>
+    where
+        I: Into<String>,
+        A: FunArgs<'a>,
+        T: Any + Clone,
+    {
+        self.call_fn_raw(ident.into(), args.into_vec())
+            .and_then(|b| {
+                b.downcast()
+                    .map(|b| *b)
+                    .map_err(|_| EvalAltResult::ErrorMismatchOutputType)
+            })
+    }
+
     /// Universal method for calling functions, that are either
     /// registered with the `Engine` or written in Rhai
-    pub fn call_fn(&self,
-               name: &str,
-               arg1: Option<&mut Box<Any>>,
-               arg2: Option<&mut Box<Any>>,
-               arg3: Option<&mut Box<Any>>,
-               arg4: Option<&mut Box<Any>>,
-               arg5: Option<&mut Box<Any>>,
-               arg6: Option<&mut Box<Any>>)
-               -> Result<Box<Any>, EvalAltResult> {
+    pub fn call_fn_raw(
+        &self,
+        ident: String,
+        args: Vec<&mut Any>,
+    ) -> Result<Box<Any>, EvalAltResult> {
+        println!(
+            "Trying to call function {:?} with args {:?}",
+            ident,
+            args.iter().map(|x| (&**x).type_id()).collect::<Vec<_>>()
+        );
 
-        match self.fns.get(name) {
-            Some(vf) => {
-                match (arg1, arg2, arg3, arg4, arg5, arg6) {
-                    (Some(ref mut a1),
-                     Some(ref mut a2),
-                     Some(ref mut a3),
-                     Some(ref mut a4),
-                     Some(ref mut a5),
-                     Some(ref mut a6)) => {
-                        for arr_f in vf {
-                            match *arr_f {
-                                FnType::ExternalFn6(ref f) => {
-                                    if let Ok(v) = f(*a1, *a2, *a3, *a4, *a5, *a6) {
-                                        return Ok(v);
-                                    }
-                                }
-                                FnType::InternalFn(ref f) => {
-                                    if f.params.len() != 6 {
-                                        return Err(EvalAltResult::ErrorFunctionArgMismatch);
-                                    }
+        let spec = FnSpec {
+            ident: ident.clone(),
+            args: Some(args.iter().map(|a| <Any as Any>::type_id(&**a)).collect()),
+        };
+        let spec1 = FnSpec { ident, args: None };
 
-                                    let mut new_scope: Scope = Vec::new();
-                                    let result1 = self.call_fn("clone",
-                                                               Some(a1),
-                                                               None,
-                                                               None,
-                                                               None,
-                                                               None,
-                                                               None);
-                                    let result2 = self.call_fn("clone",
-                                                               Some(a2),
-                                                               None,
-                                                               None,
-                                                               None,
-                                                               None,
-                                                               None);
-                                    let result3 = self.call_fn("clone",
-                                                               Some(a3),
-                                                               None,
-                                                               None,
-                                                               None,
-                                                               None,
-                                                               None);
-                                    let result4 = self.call_fn("clone",
-                                                               Some(a4),
-                                                               None,
-                                                               None,
-                                                               None,
-                                                               None,
-                                                               None);
-                                    let result5 = self.call_fn("clone",
-                                                               Some(a5),
-                                                               None,
-                                                               None,
-                                                               None,
-                                                               None,
-                                                               None);
-                                    let result6 = self.call_fn("clone",
-                                                               Some(a6),
-                                                               None,
-                                                               None,
-                                                               None,
-                                                               None,
-                                                               None);
+        self.fns
+            .get(&spec)
+            .or_else(|| self.fns.get(&spec1))
+            .ok_or(EvalAltResult::ErrorFunctionNotFound)
+            .and_then(move |f| match *f {
+                FnIntExt::Ext(ref f) => f(args),
+                FnIntExt::Int(ref f) => {
+                    let mut scope = Scope::new();
+                    scope.extend(
+                        f.params
+                            .iter()
+                            .cloned()
+                            .zip(args.iter().map(|x| (&**x).box_clone())),
+                    );
 
-                                    match (result1, result2, result3, result4, result5, result6) {
-                                        (Ok(r1), Ok(r2), Ok(r3), Ok(r4), Ok(r5), Ok(r6)) => {
-                                            new_scope.push((f.params[0].clone(), r1));
-                                            new_scope.push((f.params[1].clone(), r2));
-                                            new_scope.push((f.params[2].clone(), r3));
-                                            new_scope.push((f.params[3].clone(), r4));
-                                            new_scope.push((f.params[4].clone(), r5));
-                                            new_scope.push((f.params[5].clone(), r6));
-                                        }
-                                        _ => return Err(EvalAltResult::ErrorFunctionArgMismatch),
-                                    }
-                                    match self.eval_stmt(&mut new_scope, &*f.body) {
-                                        Err(EvalAltResult::Return(x)) => return Ok(x),
-                                        x => return x,
-                                    }
-                                }
-                                _ => (),
-                            }
-                        }
-                        Err(EvalAltResult::ErrorFunctionArgMismatch)
-                    }
-                    (Some(ref mut a1),
-                     Some(ref mut a2),
-                     Some(ref mut a3),
-                     Some(ref mut a4),
-                     Some(ref mut a5),
-                     None) => {
-                        for arr_f in vf {
-                            match *arr_f {
-                                FnType::ExternalFn5(ref f) => {
-                                    if let Ok(v) = f(*a1, *a2, *a3, *a4, *a5) {
-                                        return Ok(v);
-                                    }
-                                }
-                                FnType::InternalFn(ref f) => {
-                                    if f.params.len() != 5 {
-                                        return Err(EvalAltResult::ErrorFunctionArgMismatch);
-                                    }
-
-                                    let mut new_scope: Scope = Vec::new();
-                                    let result1 = self.call_fn("clone",
-                                                               Some(a1),
-                                                               None,
-                                                               None,
-                                                               None,
-                                                               None,
-                                                               None);
-                                    let result2 = self.call_fn("clone",
-                                                               Some(a2),
-                                                               None,
-                                                               None,
-                                                               None,
-                                                               None,
-                                                               None);
-                                    let result3 = self.call_fn("clone",
-                                                               Some(a3),
-                                                               None,
-                                                               None,
-                                                               None,
-                                                               None,
-                                                               None);
-                                    let result4 = self.call_fn("clone",
-                                                               Some(a4),
-                                                               None,
-                                                               None,
-                                                               None,
-                                                               None,
-                                                               None);
-                                    let result5 = self.call_fn("clone",
-                                                               Some(a5),
-                                                               None,
-                                                               None,
-                                                               None,
-                                                               None,
-                                                               None);
-
-                                    match (result1, result2, result3, result4, result5) {
-                                        (Ok(r1), Ok(r2), Ok(r3), Ok(r4), Ok(r5)) => {
-                                            new_scope.push((f.params[0].clone(), r1));
-                                            new_scope.push((f.params[1].clone(), r2));
-                                            new_scope.push((f.params[2].clone(), r3));
-                                            new_scope.push((f.params[3].clone(), r4));
-                                            new_scope.push((f.params[4].clone(), r5));
-                                        }
-                                        _ => return Err(EvalAltResult::ErrorFunctionArgMismatch),
-                                    }
-                                    match self.eval_stmt(&mut new_scope, &*f.body) {
-                                        Err(EvalAltResult::Return(x)) => return Ok(x),
-                                        x => return x,
-                                    }
-                                }
-                                _ => (),
-                            }
-                        }
-                        Err(EvalAltResult::ErrorFunctionArgMismatch)
-                    }
-                    (Some(ref mut a1),
-                     Some(ref mut a2),
-                     Some(ref mut a3),
-                     Some(ref mut a4),
-                     None,
-                     None) => {
-                        for arr_f in vf {
-                            match *arr_f {
-                                FnType::ExternalFn4(ref f) => {
-                                    if let Ok(v) = f(*a1, *a2, *a3, *a4) {
-                                        return Ok(v)
-                                    }
-                                }
-                                FnType::InternalFn(ref f) => {
-                                    if f.params.len() != 4 {
-                                        return Err(EvalAltResult::ErrorFunctionArgMismatch);
-                                    }
-
-                                    let mut new_scope: Scope = Vec::new();
-                                    let result1 = self.call_fn("clone",
-                                                               Some(a1),
-                                                               None,
-                                                               None,
-                                                               None,
-                                                               None,
-                                                               None);
-                                    let result2 = self.call_fn("clone",
-                                                               Some(a2),
-                                                               None,
-                                                               None,
-                                                               None,
-                                                               None,
-                                                               None);
-                                    let result3 = self.call_fn("clone",
-                                                               Some(a3),
-                                                               None,
-                                                               None,
-                                                               None,
-                                                               None,
-                                                               None);
-                                    let result4 = self.call_fn("clone",
-                                                               Some(a4),
-                                                               None,
-                                                               None,
-                                                               None,
-                                                               None,
-                                                               None);
-                                    match (result1, result2, result3, result4) {
-                                        (Ok(r1), Ok(r2), Ok(r3), Ok(r4)) => {
-                                            new_scope.push((f.params[0].clone(), r1));
-                                            new_scope.push((f.params[1].clone(), r2));
-                                            new_scope.push((f.params[2].clone(), r3));
-                                            new_scope.push((f.params[3].clone(), r4));
-                                        }
-                                        _ => return Err(EvalAltResult::ErrorFunctionArgMismatch),
-                                    }
-                                    match self.eval_stmt(&mut new_scope, &*f.body) {
-                                        Err(EvalAltResult::Return(x)) => return Ok(x),
-                                        x => return x,
-                                    }
-                                }
-                                _ => (),
-                            }
-                        }
-                        Err(EvalAltResult::ErrorFunctionArgMismatch)
-                    }
-                    (Some(ref mut a1), Some(ref mut a2), Some(ref mut a3), None, None, None) => {
-                        for arr_f in vf {
-                            match *arr_f {
-                                FnType::ExternalFn3(ref f) => {
-                                    if let Ok(v) = f(*a1, *a2, *a3) {
-                                        return Ok(v);
-                                    }
-                                }
-                                FnType::InternalFn(ref f) => {
-                                    if f.params.len() != 3 {
-                                        return Err(EvalAltResult::ErrorFunctionArgMismatch);
-                                    }
-
-                                    let mut new_scope: Scope = Vec::new();
-                                    let result1 = self.call_fn("clone",
-                                                               Some(a1),
-                                                               None,
-                                                               None,
-                                                               None,
-                                                               None,
-                                                               None);
-                                    let result2 = self.call_fn("clone",
-                                                               Some(a2),
-                                                               None,
-                                                               None,
-                                                               None,
-                                                               None,
-                                                               None);
-                                    let result3 = self.call_fn("clone",
-                                                               Some(a3),
-                                                               None,
-                                                               None,
-                                                               None,
-                                                               None,
-                                                               None);
-                                    match (result1, result2, result3) {
-                                        (Ok(r1), Ok(r2), Ok(r3)) => {
-                                            new_scope.push((f.params[0].clone(), r1));
-                                            new_scope.push((f.params[1].clone(), r2));
-                                            new_scope.push((f.params[2].clone(), r3));
-                                        }
-                                        _ => return Err(EvalAltResult::ErrorFunctionArgMismatch),
-                                    }
-                                    match self.eval_stmt(&mut new_scope, &*f.body) {
-                                        Err(EvalAltResult::Return(x)) => return Ok(x),
-                                        x => return x,
-                                    }
-                                }
-                                _ => (),
-                            }
-                        }
-                        Err(EvalAltResult::ErrorFunctionArgMismatch)
-                    }
-                    (Some(ref mut a1), Some(ref mut a2), None, None, None, None) => {
-                        for arr_f in vf {
-                            match *arr_f {
-                                FnType::ExternalFn2(ref f) => {
-                                    if let Ok(v) = f(*a1, *a2) {
-                                        return Ok(v);
-                                    }
-                                }
-                                FnType::InternalFn(ref f) => {
-                                    if f.params.len() != 2 {
-                                        return Err(EvalAltResult::ErrorFunctionArgMismatch);
-                                    }
-
-                                    let mut new_scope: Scope = Vec::new();
-                                    let result1 = self.call_fn("clone",
-                                                               Some(a1),
-                                                               None,
-                                                               None,
-                                                               None,
-                                                               None,
-                                                               None);
-                                    let result2 = self.call_fn("clone",
-                                                               Some(a2),
-                                                               None,
-                                                               None,
-                                                               None,
-                                                               None,
-                                                               None);
-                                    match (result1, result2) {
-                                        (Ok(r1), Ok(r2)) => {
-                                            new_scope.push((f.params[0].clone(), r1));
-                                            new_scope.push((f.params[1].clone(), r2));
-                                        }
-                                        _ => return Err(EvalAltResult::ErrorFunctionArgMismatch),
-                                    }
-                                    match self.eval_stmt(&mut new_scope, &*f.body) {
-                                        Err(EvalAltResult::Return(x)) => return Ok(x),
-                                        x => return x,
-                                    }
-                                }
-                                _ => (),
-                            }
-                        }
-                        Err(EvalAltResult::ErrorFunctionArgMismatch)
-                    }
-                    (Some(ref mut a1), None, None, None, None, None) => {
-                        for arr_f in vf {
-                            match *arr_f {
-                                FnType::ExternalFn1(ref f) => {
-                                    if let Ok(v) = f(*a1) {
-                                        return Ok(v);
-                                    }
-                                }
-                                FnType::InternalFn(ref f) => {
-                                    if f.params.len() != 1 {
-                                        return Err(EvalAltResult::ErrorFunctionArgMismatch);
-                                    }
-
-                                    let mut new_scope: Scope = Vec::new();
-                                    let result1 = self.call_fn("clone",
-                                                               Some(a1),
-                                                               None,
-                                                               None,
-                                                               None,
-                                                               None,
-                                                               None);
-                                    match result1 {
-                                        Ok(r1) => {
-                                            new_scope.push((f.params[0].clone(), r1));
-                                        }
-                                        _ => return Err(EvalAltResult::ErrorFunctionArgMismatch),
-                                    }
-                                    match self.eval_stmt(&mut new_scope, &*f.body) {
-                                        Err(EvalAltResult::Return(x)) => return Ok(x),
-                                        x => return x,
-                                    }
-                                }
-                                _ => (),
-                            }
-                        }
-                        Err(EvalAltResult::ErrorFunctionArgMismatch)
-                    }
-                    _ => {
-                        for arr_f in vf {
-                            match *arr_f {
-                                FnType::ExternalFn0(ref f) => {
-                                    if let Ok(v) = f() {
-                                        return Ok(v);
-                                    }
-                                }
-                                FnType::InternalFn(ref f) => {
-                                    if !f.params.is_empty() {
-                                        return Err(EvalAltResult::ErrorFunctionArgMismatch);
-                                    }
-
-                                    let mut new_scope: Scope = Vec::new();
-                                    match self.eval_stmt(&mut new_scope, &*f.body) {
-                                        Err(EvalAltResult::Return(x)) => return Ok(x),
-                                        x => return x,
-                                    }
-                                }
-                                _ => (),
-                            }
-                        }
-                        Err(EvalAltResult::ErrorFunctionArgMismatch)
+                    match self.eval_stmt(&mut scope, &*f.body) {
+                        Err(EvalAltResult::Return(x)) => Ok(x),
+                        other => other,
                     }
                 }
-            }
-            None => Err(EvalAltResult::ErrorFunctionNotFound),
-        }
+            })
+    }
+
+    pub fn register_fn_raw(&mut self, ident: String, args: Option<Vec<TypeId>>, f: Box<FnAny>) {
+        println!("Register; {:?} with args {:?}", ident, args,);
+
+        let spec = FnSpec { ident, args };
+
+        self.fns.insert(spec, FnIntExt::Ext(f));
     }
 
     /// Register a type for use with Engine. Keep in mind that
     /// your type must implement Clone.
-    pub fn register_type<T: Clone + Any>(&mut self) {
-        fn clone_helper<T: Clone>(t: T) -> T {
-            t.clone()
-        };
-
-        self.register_fn("clone", clone_helper as fn(T) -> T);
+    pub fn register_type<T: Any>(&mut self) {
+        // currently a no-op, exists for future extensibility
     }
 
     /// Register a get function for a member of a registered type
     pub fn register_get<T: Clone + Any, U: Clone + Any, F>(&mut self, name: &str, get_fn: F)
-        where F: 'static + Fn(&mut T) -> U
+    where
+        F: 'static + Fn(&mut T) -> U,
     {
-
         let get_name = "get$".to_string() + name;
         self.register_fn(&get_name, get_fn);
     }
 
     /// Register a set function for a member of a registered type
     pub fn register_set<T: Clone + Any, U: Clone + Any, F>(&mut self, name: &str, set_fn: F)
-        where F: 'static + Fn(&mut T, U) -> ()
+    where
+        F: 'static + Fn(&mut T, U) -> (),
     {
-
         let set_name = "set$".to_string() + name;
         self.register_fn(&set_name, set_fn);
     }
 
     /// Shorthand for registering both getters and setters
-    pub fn register_get_set<T: Clone + Any, U: Clone + Any, F, G>(&mut self,
-                                                                  name: &str,
-                                                                  get_fn: F,
-                                                                  set_fn: G)
-        where F: 'static + Fn(&mut T) -> U,
-              G: 'static + Fn(&mut T, U) -> ()
+    pub fn register_get_set<T: Clone + Any, U: Clone + Any, F, G>(
+        &mut self,
+        name: &str,
+        get_fn: F,
+        set_fn: G,
+    ) where
+        F: 'static + Fn(&mut T) -> U,
+        G: 'static + Fn(&mut T, U) -> (),
     {
-
         self.register_get(name, get_fn);
         self.register_set(name, set_fn);
     }
 
-    fn get_dot_val_helper(&self,
-                          scope: &mut Scope,
-                          this_ptr: &mut Box<Any>,
-                          dot_rhs: &Expr)
-                          -> Result<Box<Any>, EvalAltResult> {
+    fn get_dot_val_helper(
+        &self,
+        scope: &mut Scope,
+        this_ptr: &mut Any,
+        dot_rhs: &Expr,
+    ) -> Result<Box<Any>, EvalAltResult> {
+        use std::iter::once;
+
         match *dot_rhs {
             Expr::FnCall(ref fn_name, ref args) => {
-                if args.is_empty() {
-                    self.call_fn(fn_name, Some(this_ptr), None, None, None, None, None)
-                } else if args.len() == 1 {
-                    let mut arg = self.eval_expr(scope, &args[0])?;
+                let mut args: Vec<Box<Any>> = args.iter()
+                    .map(|arg| self.eval_expr(scope, arg))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let args = once(this_ptr)
+                    .chain(args.iter_mut().map(|b| b.as_mut()))
+                    .collect();
 
-                    self.call_fn(fn_name,
-                                 Some(this_ptr),
-                                 Some(&mut arg),
-                                 None,
-                                 None,
-                                 None,
-                                 None)
-                } else if args.len() == 2 {
-                    let mut arg1 = self.eval_expr(scope, &args[0])?;
-                    let mut arg2 = self.eval_expr(scope, &args[1])?;
-
-                    self.call_fn(fn_name,
-                                 Some(this_ptr),
-                                 Some(&mut arg1),
-                                 Some(&mut arg2),
-                                 None,
-                                 None,
-                                 None)
-                } else if args.len() == 3 {
-                    let mut arg1 = self.eval_expr(scope, &args[0])?;
-                    let mut arg2 = self.eval_expr(scope, &args[1])?;
-                    let mut arg3 = self.eval_expr(scope, &args[2])?;
-
-                    self.call_fn(fn_name,
-                                 Some(this_ptr),
-                                 Some(&mut arg1),
-                                 Some(&mut arg2),
-                                 Some(&mut arg3),
-                                 None,
-                                 None)
-                } else if args.len() == 4 {
-                    let mut arg1 = self.eval_expr(scope, &args[0])?;
-                    let mut arg2 = self.eval_expr(scope, &args[1])?;
-                    let mut arg3 = self.eval_expr(scope, &args[2])?;
-                    let mut arg4 = self.eval_expr(scope, &args[3])?;
-
-                    self.call_fn(fn_name,
-                                 Some(this_ptr),
-                                 Some(&mut arg1),
-                                 Some(&mut arg2),
-                                 Some(&mut arg3),
-                                 Some(&mut arg4),
-                                 None)
-                } else if args.len() == 5 {
-                    let mut arg1 = self.eval_expr(scope, &args[0])?;
-                    let mut arg2 = self.eval_expr(scope, &args[1])?;
-                    let mut arg3 = self.eval_expr(scope, &args[2])?;
-                    let mut arg4 = self.eval_expr(scope, &args[3])?;
-                    let mut arg5 = self.eval_expr(scope, &args[4])?;
-
-                    self.call_fn(fn_name,
-                                 Some(this_ptr),
-                                 Some(&mut arg1),
-                                 Some(&mut arg2),
-                                 Some(&mut arg3),
-                                 Some(&mut arg4),
-                                 Some(&mut arg5))
-                } else {
-                    Err(EvalAltResult::ErrorFunctionCallNotSupported)
-                }
+                self.call_fn_raw(fn_name.to_owned(), args)
             }
             Expr::Identifier(ref id) => {
                 let get_fn_name = "get$".to_string() + id;
-                self.call_fn(&get_fn_name, Some(this_ptr), None, None, None, None, None)
+
+                self.call_fn_raw(get_fn_name, vec![this_ptr])
             }
             Expr::Index(ref id, ref idx_raw) => {
                 let idx = self.eval_expr(scope, idx_raw)?;
-
                 let get_fn_name = "get$".to_string() + id;
 
-                if let Ok(mut val) = self.call_fn(&get_fn_name,
-                                                  Some(this_ptr),
-                                                  None,
-                                                  None,
-                                                  None,
-                                                  None,
-                                                  None) {
-                    if let Ok(i) = idx.downcast::<i64>() {
-                        if let Some(arr_typed) =
-                               (*val).downcast_mut() as Option<&mut Vec<Box<Any>>> {
-                            return self.call_fn("clone",
-                                                Some(&mut arr_typed[*i as usize]),
-                                                None,
-                                                None,
-                                                None,
-                                                None,
-                                                None);
-                        } else {
-                            return Err(EvalAltResult::ErrorIndexMismatch);
-                        }
-                    } else {
-                        return Err(EvalAltResult::ErrorIndexMismatch);
-                    }
-                } else {
-                    return Err(EvalAltResult::ErrorIndexMismatch);
-                }
-            }
-            Expr::Dot(ref inner_lhs, ref inner_rhs) => {
-                match **inner_lhs {
-                    Expr::Identifier(ref id) => {
-                        let get_fn_name = "get$".to_string() + id;
-                        let result = self.call_fn(&get_fn_name,
-                                                  Some(this_ptr),
-                                                  None,
-                                                  None,
-                                                  None,
-                                                  None,
-                                                  None);
+                let mut val = self.call_fn_raw(get_fn_name, vec![this_ptr])?;
 
-                        match result {
-                            Ok(mut v) => self.get_dot_val_helper(scope, &mut v, inner_rhs),
-                            e => e,
-                        }
-                    }
-                    _ => Err(EvalAltResult::InternalErrorMalformedDotExpression),
-                }
+                ((*val).downcast_mut() as Option<&mut Vec<Box<Any>>>)
+                    .and_then(|arr| idx.downcast_ref::<i64>().map(|idx| (arr, *idx as usize)))
+                    .map(|(arr, idx)| arr[idx].clone())
+                    .ok_or(EvalAltResult::ErrorIndexMismatch)
             }
+            Expr::Dot(ref inner_lhs, ref inner_rhs) => match **inner_lhs {
+                Expr::Identifier(ref id) => {
+                    let get_fn_name = "get$".to_string() + id;
+                    self.call_fn_raw(get_fn_name, vec![this_ptr])
+                        .and_then(|mut v| self.get_dot_val_helper(scope, v.as_mut(), inner_rhs))
+                }
+                _ => Err(EvalAltResult::InternalErrorMalformedDotExpression),
+            },
             _ => Err(EvalAltResult::InternalErrorMalformedDotExpression),
         }
     }
 
-    fn get_dot_val(&self,
-                   scope: &mut Scope,
-                   dot_lhs: &Expr,
-                   dot_rhs: &Expr)
-                   -> Result<Box<Any>, EvalAltResult> {
+    fn search_scope<'a, F, T>(
+        scope: &'a mut Scope,
+        id: &str,
+        map: F,
+    ) -> Result<(usize, T), EvalAltResult>
+    where
+        F: FnOnce(&'a mut Any) -> Result<T, EvalAltResult>,
+    {
+        scope
+            .iter_mut()
+            .enumerate()
+            .rev()
+            .find(|&(_, &mut (ref name, _))| *id == *name)
+            .ok_or_else(|| EvalAltResult::ErrorVariableNotFound(id.to_owned()))
+            .and_then(move |(idx, &mut (_, ref mut val))| map(val.as_mut()).map(|val| (idx, val)))
+    }
+
+    fn array_value(
+        &self,
+        scope: &mut Scope,
+        id: &str,
+        idx: &Expr,
+    ) -> Result<(usize, usize, Box<Any>), EvalAltResult> {
+        let idx_boxed = self.eval_expr(scope, idx)?
+            .downcast::<i64>()
+            .map_err(|_| EvalAltResult::ErrorIndexMismatch)?;
+        let idx = *idx_boxed as usize;
+        let (idx_sc, val) = Self::search_scope(scope, id, |val| {
+            ((*val).downcast_mut() as Option<&mut Vec<Box<Any>>>)
+                .map(|arr| arr[idx].clone())
+                .ok_or(EvalAltResult::ErrorIndexMismatch)
+        })?;
+
+        Ok((idx_sc, idx, val))
+    }
+
+    fn get_dot_val(
+        &self,
+        scope: &mut Scope,
+        dot_lhs: &Expr,
+        dot_rhs: &Expr,
+    ) -> Result<Box<Any>, EvalAltResult> {
         match *dot_lhs {
             Expr::Identifier(ref id) => {
-                let mut target: Option<Box<Any>> = None;
+                let (sc_idx, mut target) = Self::search_scope(scope, id, |x| Ok(x.box_clone()))?;
+                let value = self.get_dot_val_helper(scope, target.as_mut(), dot_rhs);
 
-                for &mut (ref name, ref mut val) in &mut scope.iter_mut().rev() {
-                    if *id == *name {
-                        let result = self.call_fn("clone", Some(val), None, None, None, None, None);
+                // In case the expression mutated `target`, we need to reassign it because
+                // of the above `clone`.
+                scope[sc_idx].1 = target;
 
-                        if let Ok(clone) = result {
-                            target = Some(clone);
-                            break;
-                        } else {
-                            return result;
-                        }
-                    }
-                }
-
-                if let Some(mut t) = target {
-                    let result = self.get_dot_val_helper(scope, &mut t, dot_rhs);
-
-                    for &mut (ref name, ref mut val) in &mut scope.iter_mut().rev() {
-                        if *id == *name {
-                            *val = t;
-                            break;
-                        }
-                    }
-                    return result;
-                }
-
-                Err(EvalAltResult::ErrorVariableNotFound(id.clone()))
+                value
             }
             Expr::Index(ref id, ref idx_raw) => {
-                let idx_boxed = self.eval_expr(scope, idx_raw)?;
-                let idx = if let Ok(i) = idx_boxed.downcast::<i64>() {
-                    i
-                } else {
-                    return Err(EvalAltResult::ErrorIndexMismatch);
-                };
+                let (sc_idx, idx, mut target) = self.array_value(scope, id, idx_raw)?;
+                let value = self.get_dot_val_helper(scope, target.as_mut(), dot_rhs);
 
-                let mut target: Option<Box<Any>> = None;
+                // In case the expression mutated `target`, we need to reassign it because
+                // of the above `clone`.
+                scope[sc_idx].1.downcast_mut::<Vec<Box<Any>>>().unwrap()[idx] = target;
 
-                for &mut (ref name, ref mut val) in &mut scope.iter_mut().rev() {
-                    if *id == *name {
-                        if let Some(arr_typed) =
-                               (*val).downcast_mut() as Option<&mut Vec<Box<Any>>> {
-                            let result = self.call_fn("clone",
-                                                      Some(&mut arr_typed[*idx as usize]),
-                                                      None,
-                                                      None,
-                                                      None,
-                                                      None,
-                                                      None);
-
-                            if let Ok(clone) = result {
-                                target = Some(clone);
-                                break;
-                            } else {
-                                return result;
-                            }
-                        } else {
-                            return Err(EvalAltResult::ErrorIndexMismatch);
-                        }
-                    }
-                }
-
-                if let Some(mut t) = target {
-                    let result = self.get_dot_val_helper(scope, &mut t, dot_rhs);
-                    for &mut (ref name, ref mut val) in &mut scope.iter_mut().rev() {
-                        if *id == *name {
-                            if let Some(arr_typed) =
-                                   (*val).downcast_mut() as Option<&mut Vec<Box<Any>>> {
-                                arr_typed[*idx as usize] = t;
-                                break;
-                            }
-                        }
-                    }
-                    return result;
-                }
-
-                Err(EvalAltResult::ErrorVariableNotFound(id.clone()))
+                value
             }
             _ => Err(EvalAltResult::InternalErrorMalformedDotExpression),
         }
     }
 
-    fn set_dot_val_helper(&self,
-                          this_ptr: &mut Box<Any>,
-                          dot_rhs: &Expr,
-                          mut source_val: Box<Any>)
-                          -> Result<Box<Any>, EvalAltResult> {
+    fn set_dot_val_helper(
+        &self,
+        this_ptr: &mut Any,
+        dot_rhs: &Expr,
+        mut source_val: Box<Any>,
+    ) -> Result<Box<Any>, EvalAltResult> {
         match *dot_rhs {
             Expr::Identifier(ref id) => {
                 let set_fn_name = "set$".to_string() + id;
-                self.call_fn(&set_fn_name,
-                             Some(this_ptr),
-                             Some(&mut source_val),
-                             None,
-                             None,
-                             None,
-                             None)
+                self.call_fn_raw(set_fn_name, vec![this_ptr, source_val.as_mut()])
             }
-            Expr::Dot(ref inner_lhs, ref inner_rhs) => {
-                match **inner_lhs {
-                    Expr::Identifier(ref id) => {
-                        let get_fn_name = "get$".to_string() + id;
-                        let result = self.call_fn(&get_fn_name,
-                                                  Some(this_ptr),
-                                                  None,
-                                                  None,
-                                                  None,
-                                                  None,
-                                                  None);
+            Expr::Dot(ref inner_lhs, ref inner_rhs) => match **inner_lhs {
+                Expr::Identifier(ref id) => {
+                    let get_fn_name = "get$".to_string() + id;
+                    self.call_fn_raw(get_fn_name, vec![this_ptr])
+                        .and_then(|mut v| {
+                            self.set_dot_val_helper(v.as_mut(), inner_rhs, source_val)
+                                .map(|_| v) // Discard Ok return value
+                        })
+                        .and_then(|mut v| {
+                            let set_fn_name = "set$".to_string() + id;
 
-                        match result {
-                            Ok(mut v) => {
-                                match self.set_dot_val_helper(&mut v, inner_rhs, source_val) {
-                                    Ok(_) => {
-                                        let set_fn_name = "set$".to_string() + id;
-
-                                        self.call_fn(&set_fn_name,
-                                                     Some(this_ptr),
-                                                     Some(&mut v),
-                                                     None,
-                                                     None,
-                                                     None,
-                                                     None)
-                                    }
-                                    e => e,
-                                }
-                            }
-                            e => e,
-                        }
-
-                    }
-                    _ => Err(EvalAltResult::InternalErrorMalformedDotExpression),
+                            self.call_fn_raw(set_fn_name, vec![this_ptr, v.as_mut()])
+                        })
                 }
-            }
+                _ => Err(EvalAltResult::InternalErrorMalformedDotExpression),
+            },
             _ => Err(EvalAltResult::InternalErrorMalformedDotExpression),
         }
     }
 
-    fn set_dot_val(&self,
-                   scope: &mut Scope,
-                   dot_lhs: &Expr,
-                   dot_rhs: &Expr,
-                   source_val: Box<Any>)
-                   -> Result<Box<Any>, EvalAltResult> {
+    fn set_dot_val(
+        &self,
+        scope: &mut Scope,
+        dot_lhs: &Expr,
+        dot_rhs: &Expr,
+        source_val: Box<Any>,
+    ) -> Result<Box<Any>, EvalAltResult> {
         match *dot_lhs {
             Expr::Identifier(ref id) => {
-                let mut target: Option<Box<Any>> = None;
+                let (sc_idx, mut target) = Self::search_scope(scope, id, |x| Ok(x.box_clone()))?;
+                let value = self.set_dot_val_helper(target.as_mut(), dot_rhs, source_val);
 
-                for &mut (ref name, ref mut val) in &mut scope.iter_mut().rev() {
-                    if *id == *name {
-                        if let Ok(clone) = self.call_fn("clone",
-                                                        Some(val),
-                                                        None,
-                                                        None,
-                                                        None,
-                                                        None,
-                                                        None) {
-                            target = Some(clone);
-                            break;
-                        } else {
-                            return Err(EvalAltResult::ErrorVariableNotFound(id.clone()));
-                        }
-                    }
-                }
+                // In case the expression mutated `target`, we need to reassign it because
+                // of the above `clone`.
+                scope[sc_idx].1 = target;
 
-                if let Some(mut t) = target {
-                    let result = self.set_dot_val_helper(&mut t, dot_rhs, source_val);
-
-                    for &mut (ref name, ref mut val) in &mut scope.iter_mut().rev() {
-                        if *id == *name {
-                            *val = t;
-                            break;
-                        }
-                    }
-                    return result;
-                }
-
-                Err(EvalAltResult::ErrorAssignmentToUnknownLHS)
+                value
             }
             Expr::Index(ref id, ref idx_raw) => {
-                let idx_boxed = self.eval_expr(scope, idx_raw)?;
-                let idx = if let Ok(i) = idx_boxed.downcast::<i64>() {
-                    i
-                } else {
-                    return Err(EvalAltResult::ErrorIndexMismatch);
-                };
+                let (sc_idx, idx, mut target) = self.array_value(scope, id, idx_raw)?;
+                let value = self.set_dot_val_helper(target.as_mut(), dot_rhs, source_val);
 
-                let mut target: Option<Box<Any>> = None;
+                // In case the expression mutated `target`, we need to reassign it because
+                // of the above `clone`.
+                scope[sc_idx].1.downcast_mut::<Vec<Box<Any>>>().unwrap()[idx] = target;
 
-                for &mut (ref name, ref mut val) in &mut scope.iter_mut().rev() {
-                    if *id == *name {
-                        if let Some(arr_typed) =
-                               (*val).downcast_mut() as Option<&mut Vec<Box<Any>>> {
-                            let result = self.call_fn("clone",
-                                                      Some(&mut arr_typed[*idx as usize]),
-                                                      None,
-                                                      None,
-                                                      None,
-                                                      None,
-                                                      None);
-
-                            if let Ok(clone) = result {
-                                target = Some(clone);
-                                break;
-                            } else {
-                                return result;
-                            }
-                        } else {
-                            return Err(EvalAltResult::ErrorIndexMismatch);
-                        }
-                    }
-                }
-
-                if let Some(mut t) = target {
-                    let result = self.set_dot_val_helper(&mut t, dot_rhs, source_val);
-                    for &mut (ref name, ref mut val) in &mut scope.iter_mut().rev() {
-                        if *id == *name {
-                            if let Some(arr_typed) =
-                                   (*val).downcast_mut() as Option<&mut Vec<Box<Any>>> {
-                                arr_typed[*idx as usize] = t;
-                                break;
-                            }
-                        }
-                    }
-                    return result;
-                }
-
-                Err(EvalAltResult::ErrorVariableNotFound(id.clone()))
+                value
             }
             _ => Err(EvalAltResult::InternalErrorMalformedDotExpression),
         }
@@ -955,36 +425,13 @@ impl Engine {
             Expr::Identifier(ref id) => {
                 for &mut (ref name, ref mut val) in &mut scope.iter_mut().rev() {
                     if *id == *name {
-                        return self.call_fn("clone", Some(val), None, None, None, None, None);
+                        return Ok(val.clone());
                     }
                 }
                 Err(EvalAltResult::ErrorVariableNotFound(id.clone()))
             }
             Expr::Index(ref id, ref idx_raw) => {
-                let idx = self.eval_expr(scope, idx_raw)?;
-
-                for &mut (ref name, ref mut val) in &mut scope.iter_mut().rev() {
-                    if *id == *name {
-                        if let Ok(i) = idx.downcast::<i64>() {
-                            if let Some(arr_typed) =
-                                   (*val).downcast_mut() as Option<&mut Vec<Box<Any>>> {
-                                return self.call_fn("clone",
-                                                    Some(&mut arr_typed[*i as usize]),
-                                                    None,
-                                                    None,
-                                                    None,
-                                                    None,
-                                                    None);
-                            } else {
-                                return Err(EvalAltResult::ErrorIndexMismatch);
-                            }
-                        } else {
-                            return Err(EvalAltResult::ErrorIndexMismatch);
-                        }
-                    }
-                }
-
-                Err(EvalAltResult::ErrorVariableNotFound(id.clone()))
+                self.array_value(scope, id, idx_raw).map(|(_, _, x)| x)
             }
             Expr::Assignment(ref id, ref rhs) => {
                 let rhs_val = self.eval_expr(scope, rhs)?;
@@ -993,7 +440,6 @@ impl Engine {
                     Expr::Identifier(ref n) => {
                         for &mut (ref name, ref mut val) in &mut scope.iter_mut().rev() {
                             if *n == *name {
-
                                 *val = rhs_val;
 
                                 return Ok(Box::new(()));
@@ -1006,9 +452,10 @@ impl Engine {
 
                         for &mut (ref name, ref mut val) in &mut scope.iter_mut().rev() {
                             if *id == *name {
-                                if let Ok(i) = idx.downcast::<i64>() {
+                                if let Some(i) = idx.downcast_ref::<i64>() {
                                     if let Some(arr_typed) =
-                                           (*val).downcast_mut() as Option<&mut Vec<Box<Any>>> {
+                                        (*val).downcast_mut() as Option<&mut Vec<Box<Any>>>
+                                    {
                                         arr_typed[*i as usize] = rhs_val;
                                         return Ok(Box::new(()));
                                     } else {
@@ -1039,82 +486,15 @@ impl Engine {
 
                 Ok(Box::new(arr))
             }
-            Expr::FnCall(ref fn_name, ref args) => {
-                if args.is_empty() {
-                    self.call_fn(fn_name, None, None, None, None, None, None)
-                } else if args.len() == 1 {
-                    let mut arg = self.eval_expr(scope, &args[0])?;
-
-                    self.call_fn(fn_name, Some(&mut arg), None, None, None, None, None)
-                } else if args.len() == 2 {
-                    let mut arg1 = self.eval_expr(scope, &args[0])?;
-                    let mut arg2 = self.eval_expr(scope, &args[1])?;
-
-                    self.call_fn(fn_name,
-                                 Some(&mut arg1),
-                                 Some(&mut arg2),
-                                 None,
-                                 None,
-                                 None,
-                                 None)
-                } else if args.len() == 3 {
-                    let mut arg1 = self.eval_expr(scope, &args[0])?;
-                    let mut arg2 = self.eval_expr(scope, &args[1])?;
-                    let mut arg3 = self.eval_expr(scope, &args[2])?;
-
-                    self.call_fn(fn_name,
-                                 Some(&mut arg1),
-                                 Some(&mut arg2),
-                                 Some(&mut arg3),
-                                 None,
-                                 None,
-                                 None)
-                } else if args.len() == 4 {
-                    let mut arg1 = self.eval_expr(scope, &args[0])?;
-                    let mut arg2 = self.eval_expr(scope, &args[1])?;
-                    let mut arg3 = self.eval_expr(scope, &args[2])?;
-                    let mut arg4 = self.eval_expr(scope, &args[3])?;
-
-                    self.call_fn(fn_name,
-                                 Some(&mut arg1),
-                                 Some(&mut arg2),
-                                 Some(&mut arg3),
-                                 Some(&mut arg4),
-                                 None,
-                                 None)
-                } else if args.len() == 5 {
-                    let mut arg1 = self.eval_expr(scope, &args[0])?;
-                    let mut arg2 = self.eval_expr(scope, &args[1])?;
-                    let mut arg3 = self.eval_expr(scope, &args[2])?;
-                    let mut arg4 = self.eval_expr(scope, &args[3])?;
-                    let mut arg5 = self.eval_expr(scope, &args[4])?;
-
-                    self.call_fn(fn_name,
-                                 Some(&mut arg1),
-                                 Some(&mut arg2),
-                                 Some(&mut arg3),
-                                 Some(&mut arg4),
-                                 Some(&mut arg5),
-                                 None)
-                } else if args.len() == 6 {
-                    let mut arg1 = self.eval_expr(scope, &args[0])?;
-                    let mut arg2 = self.eval_expr(scope, &args[1])?;
-                    let mut arg3 = self.eval_expr(scope, &args[2])?;
-                    let mut arg4 = self.eval_expr(scope, &args[3])?;
-                    let mut arg5 = self.eval_expr(scope, &args[4])?;
-                    let mut arg6 = self.eval_expr(scope, &args[5])?;
-
-                    self.call_fn(fn_name,
-                                 Some(&mut arg1),
-                                 Some(&mut arg2),
-                                 Some(&mut arg3),
-                                 Some(&mut arg4),
-                                 Some(&mut arg5),
-                                 Some(&mut arg6))
-                } else {
-                    Err(EvalAltResult::ErrorFunctionCallNotSupported)
-                }
-            }
+            Expr::FnCall(ref fn_name, ref args) => self.call_fn_raw(
+                fn_name.to_owned(),
+                args.iter()
+                    .map(|ex| self.eval_expr(scope, ex))
+                    .collect::<Result<Vec<Box<Any>>, _>>()?
+                    .iter_mut()
+                    .map(|b| b.as_mut())
+                    .collect(),
+            ),
             Expr::True => Ok(Box::new(true)),
             Expr::False => Ok(Box::new(false)),
         }
@@ -1167,42 +547,38 @@ impl Engine {
                     Err(_) => Err(EvalAltResult::ErrorIfGuardMismatch),
                 }
             }
-            Stmt::While(ref guard, ref body) => {
-                loop {
-                    let guard_result = self.eval_expr(scope, guard)?;
-                    match guard_result.downcast::<bool>() {
-                        Ok(g) => {
-                            if *g {
-                                match self.eval_stmt(scope, body) {
-                                    Err(EvalAltResult::LoopBreak) => {
-                                        return Ok(Box::new(()));
-                                    }
-                                    Err(x) => {
-                                        return Err(x);
-                                    }
-                                    _ => (),
+            Stmt::While(ref guard, ref body) => loop {
+                let guard_result = self.eval_expr(scope, guard)?;
+                match guard_result.downcast::<bool>() {
+                    Ok(g) => {
+                        if *g {
+                            match self.eval_stmt(scope, body) {
+                                Err(EvalAltResult::LoopBreak) => {
+                                    return Ok(Box::new(()));
                                 }
-                            } else {
-                                return Ok(Box::new(()));
+                                Err(x) => {
+                                    return Err(x);
+                                }
+                                _ => (),
                             }
-                        }
-                        Err(_) => return Err(EvalAltResult::ErrorIfGuardMismatch),
-                    }
-                }
-            }
-            Stmt::Loop(ref body) => {
-                loop {
-                    match self.eval_stmt(scope, body) {
-                        Err(EvalAltResult::LoopBreak) => {
+                        } else {
                             return Ok(Box::new(()));
                         }
-                        Err(x) => {
-                            return Err(x);
-                        }
-                        _ => (),
                     }
+                    Err(_) => return Err(EvalAltResult::ErrorIfGuardMismatch),
                 }
-            }
+            },
+            Stmt::Loop(ref body) => loop {
+                match self.eval_stmt(scope, body) {
+                    Err(EvalAltResult::LoopBreak) => {
+                        return Ok(Box::new(()));
+                    }
+                    Err(x) => {
+                        return Err(x);
+                    }
+                    _ => (),
+                }
+            },
             Stmt::Break => Err(EvalAltResult::LoopBreak),
             Stmt::Return => Err(EvalAltResult::Return(Box::new(()))),
             Stmt::ReturnWithVal(ref a) => {
@@ -1250,10 +626,11 @@ impl Engine {
     }
 
     /// Evaluate with own scope
-    pub fn eval_with_scope<T: Any + Clone>(&mut self,
-                                           scope: &mut Scope,
-                                           input: &str)
-                                           -> Result<T, EvalAltResult> {
+    pub fn eval_with_scope<T: Any + Clone>(
+        &mut self,
+        scope: &mut Scope,
+        input: &str,
+    ) -> Result<T, EvalAltResult> {
         let tokens = lex(input);
 
         let mut peekables = tokens.peekable();
@@ -1264,13 +641,15 @@ impl Engine {
                 let mut x: Result<Box<Any>, EvalAltResult> = Ok(Box::new(()));
 
                 for f in fns {
-                    if f.params.len() > 6 {
-                        return Err(EvalAltResult::ErrorFunctionArityNotSupported);
-                    }
                     let name = f.name.clone();
                     let local_f = f.clone();
-                    let ent = self.fns.entry(name).or_insert_with(Vec::new);
-                    (*ent).push(FnType::InternalFn(local_f));
+
+                    let spec = FnSpec {
+                        ident: name,
+                        args: None,
+                    };
+
+                    self.fns.insert(spec, FnIntExt::Int(local_f));
                 }
 
                 for o in os {
@@ -1280,14 +659,11 @@ impl Engine {
                     }
                 }
 
-                match x {
-                    Ok(v) => {
-                        match v.downcast::<T>() {
-                            Ok(out) => Ok(*out),
-                            Err(_) => Err(EvalAltResult::ErrorMismatchOutputType),
-                        }
-                    }
-                    Err(e) => Err(e),
+                let x = x?;
+
+                match x.downcast::<T>() {
+                    Ok(out) => Ok(*out),
+                    Err(_) => Err(EvalAltResult::ErrorMismatchOutputType),
                 }
             }
             Err(_) => Err(EvalAltResult::ErrorFunctionArgMismatch),
@@ -1307,7 +683,9 @@ impl Engine {
             if f.read_to_string(&mut contents).is_ok() {
                 if let e @ Err(_) = self.consume(&contents) {
                     return e;
-                } else { return Ok(()); }
+                } else {
+                    return Ok(());
+                }
             } else {
                 Err(EvalAltResult::ErrorCantOpenScriptFile)
             }
@@ -1330,7 +708,11 @@ impl Engine {
     /// Evaluate a string with own scoppe, but only return errors, if there are any.
     /// Useful for when you don't need the result, but still need
     /// to keep track of possible errors
-    pub fn consume_with_scope(&mut self, scope: &mut Scope, input: &str) -> Result<(), EvalAltResult> {
+    pub fn consume_with_scope(
+        &mut self,
+        scope: &mut Scope,
+        input: &str,
+    ) -> Result<(), EvalAltResult> {
         let tokens = lex(input);
 
         let mut peekables = tokens.peekable();
@@ -1344,8 +726,13 @@ impl Engine {
                     }
                     let name = f.name.clone();
                     let local_f = f.clone();
-                    let ent = self.fns.entry(name).or_insert_with(Vec::new);
-                    (*ent).push(FnType::InternalFn(local_f));
+
+                    let spec = FnSpec {
+                        ident: name,
+                        args: None,
+                    };
+
+                    self.fns.insert(spec, FnIntExt::Int(local_f));
                 }
 
                 for o in os {
@@ -1355,7 +742,7 @@ impl Engine {
                 }
 
                 Ok(())
-            },
+            }
             Err(_) => Err(EvalAltResult::ErrorFunctionArgMismatch),
         }
     }
@@ -1397,30 +784,78 @@ impl Engine {
             )
         }
 
-        fn add<T: Add>(x: T, y: T) -> <T as Add>::Output { x + y }
-        fn sub<T: Sub>(x: T, y: T) -> <T as Sub>::Output { x - y }
-        fn mul<T: Mul>(x: T, y: T) -> <T as Mul>::Output { x * y }
-        fn div<T: Div>(x: T, y: T) -> <T as Div>::Output { x / y }
-        fn neg<T: Neg>(x: T) -> <T as Neg>::Output { -x }
-        fn lt<T: PartialOrd>(x: T, y: T)  -> bool { x < y  }
-        fn lte<T: PartialOrd>(x: T, y: T) -> bool { x <= y }
-        fn gt<T: PartialOrd>(x: T, y: T)  -> bool { x > y  }
-        fn gte<T: PartialOrd>(x: T, y: T) -> bool { x >= y }
-        fn eq<T: PartialEq>(x: T, y: T)   -> bool { x == y }
-        fn ne<T: PartialEq>(x: T, y: T)   -> bool { x != y }
-        fn and(x: bool, y: bool)   -> bool { x && y }
-        fn or(x: bool, y: bool)    -> bool { x || y }
-        fn not(x: bool)            -> bool { !x }
-        fn concat(x: String, y: String) -> String { x + &y }
-        fn binary_and<T: BitAnd>(x: T, y: T)   -> <T as BitAnd>::Output { x & y }
-        fn binary_or<T: BitOr>(x: T, y: T)   -> <T as BitOr>::Output { x | y }
-        fn binary_xor<T: BitXor>(x: T, y: T)   -> <T as BitXor>::Output { x ^ y }
-        fn left_shift<T: Shl<T>>(x: T, y: T)   -> <T as Shl<T>>::Output { x.shl(y) }
-        fn right_shift<T: Shr<T>>(x: T, y: T)   -> <T as Shr<T>>::Output { x.shr(y) }
-        fn modulo<T: Rem<T>>(x: T, y: T)   -> <T as Rem<T>>::Output { x % y}
-        fn pow_i64_i64(x: i64, y: i64) -> i64 { x.pow(y as u32) }
-        fn pow_f64_f64(x: f64, y: f64) -> f64 { x.powf(y) }
-        fn pow_f64_i64(x: f64, y: i64) -> f64 { x.powi(y as i32) }
+        fn add<T: Add>(x: T, y: T) -> <T as Add>::Output {
+            x + y
+        }
+        fn sub<T: Sub>(x: T, y: T) -> <T as Sub>::Output {
+            x - y
+        }
+        fn mul<T: Mul>(x: T, y: T) -> <T as Mul>::Output {
+            x * y
+        }
+        fn div<T: Div>(x: T, y: T) -> <T as Div>::Output {
+            x / y
+        }
+        fn neg<T: Neg>(x: T) -> <T as Neg>::Output {
+            -x
+        }
+        fn lt<T: PartialOrd>(x: T, y: T) -> bool {
+            x < y
+        }
+        fn lte<T: PartialOrd>(x: T, y: T) -> bool {
+            x <= y
+        }
+        fn gt<T: PartialOrd>(x: T, y: T) -> bool {
+            x > y
+        }
+        fn gte<T: PartialOrd>(x: T, y: T) -> bool {
+            x >= y
+        }
+        fn eq<T: PartialEq>(x: T, y: T) -> bool {
+            x == y
+        }
+        fn ne<T: PartialEq>(x: T, y: T) -> bool {
+            x != y
+        }
+        fn and(x: bool, y: bool) -> bool {
+            x && y
+        }
+        fn or(x: bool, y: bool) -> bool {
+            x || y
+        }
+        fn not(x: bool) -> bool {
+            !x
+        }
+        fn concat(x: String, y: String) -> String {
+            x + &y
+        }
+        fn binary_and<T: BitAnd>(x: T, y: T) -> <T as BitAnd>::Output {
+            x & y
+        }
+        fn binary_or<T: BitOr>(x: T, y: T) -> <T as BitOr>::Output {
+            x | y
+        }
+        fn binary_xor<T: BitXor>(x: T, y: T) -> <T as BitXor>::Output {
+            x ^ y
+        }
+        fn left_shift<T: Shl<T>>(x: T, y: T) -> <T as Shl<T>>::Output {
+            x.shl(y)
+        }
+        fn right_shift<T: Shr<T>>(x: T, y: T) -> <T as Shr<T>>::Output {
+            x.shr(y)
+        }
+        fn modulo<T: Rem<T>>(x: T, y: T) -> <T as Rem<T>>::Output {
+            x % y
+        }
+        fn pow_i64_i64(x: i64, y: i64) -> i64 {
+            x.pow(y as u32)
+        }
+        fn pow_f64_f64(x: f64, y: f64) -> f64 {
+            x.powf(y)
+        }
+        fn pow_f64_i64(x: f64, y: i64) -> f64 {
+            x.powi(y as i32)
+        }
 
         reg_op!(engine, "+", add, i32, i64, u32, u64, f32, f64);
         reg_op!(engine, "-", sub, i32, i64, u32, u64, f32, f64);
@@ -1461,7 +896,9 @@ impl Engine {
 
     /// Make a new engine
     pub fn new() -> Engine {
-        let mut engine = Engine { fns: HashMap::new() };
+        let mut engine = Engine {
+            fns: HashMap::new(),
+        };
 
         Engine::register_default_lib(&mut engine);
 

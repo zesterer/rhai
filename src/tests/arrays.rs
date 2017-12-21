@@ -1,5 +1,5 @@
 use engine::Engine;
-use fn_register::FnRegister;
+use fn_register::RegisterFn;
 
 #[test]
 fn test_arrays() {

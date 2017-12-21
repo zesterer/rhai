@@ -4,8 +4,8 @@ use engine::{Engine, EvalAltResult};
 fn test_mismatched_op() {
     let mut engine = Engine::new();
 
-    match engine.eval::<i64>("60 + \"hello\"") {
-        Err(EvalAltResult::ErrorFunctionArgMismatch) => (),
-        _ => assert!(false),
-    }
+    assert_eq!(
+        engine.eval::<i64>("60 + \"hello\""),
+        Err(EvalAltResult::ErrorFunctionNotFound)
+    );
 }
