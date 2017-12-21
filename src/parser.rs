@@ -156,22 +156,22 @@ pub enum Token {
     Fn,
     Break,
     Return,
-    PlusEquals,
-    MinusEquals,
-    MultiplyEquals,
-    DivideEquals,
-    LeftShiftEquals,
-    RightShiftEquals,
-    AndEquals,
-    OrEquals,
-    XOrEquals,
+    PlusAssign,
+    MinusAssign,
+    MultiplyAssign,
+    DivideAssign,
+    LeftShiftAssign,
+    RightShiftAssign,
+    AndAssign,
+    OrAssign,
+    XOrAssign,
     LeftShift,
     RightShift,
     XOr,
     Modulo,
-    ModuloEquals,
+    ModuloAssign,
     PowerOf,
-    PowerOfEquals,
+    PowerOfAssign,
     LexErr(LexError),
 }
 
@@ -211,23 +211,23 @@ impl Token {
             And              |
             If               |
             While            |
-            PlusEquals       |
-            MinusEquals      |
-            MultiplyEquals   |
-            DivideEquals     |
-            LeftShiftEquals  |
-            RightShiftEquals |
-            AndEquals        |
-            OrEquals         |
-            XOrEquals        |
+            PlusAssign       |
+            MinusAssign      |
+            MultiplyAssign   |
+            DivideAssign     |
+            LeftShiftAssign  |
+            RightShiftAssign |
+            AndAssign        |
+            OrAssign         |
+            XOrAssign        |
             LeftShift        |
             RightShift       |
             XOr              |
             Modulo           |
-            ModuloEquals     |
+            ModuloAssign     |
             Return           |
             PowerOf          |
-            PowerOfEquals => true,
+            PowerOfAssign => true,
             _ => false,
         }
     }
@@ -538,7 +538,7 @@ impl<'a> TokenIterator<'a> {
                     return match self.char_stream.peek() {
                         Some(&'=') => {
                             self.char_stream.next();
-                            Some(Token::PlusEquals)
+                            Some(Token::PlusAssign)
                         },
                         _ if self.last.is_next_unary() => Some(Token::UnaryPlus),
                         _ => Some(Token::Plus),
@@ -548,7 +548,7 @@ impl<'a> TokenIterator<'a> {
                     return match self.char_stream.peek() {
                         Some(&'=') => {
                             self.char_stream.next();
-                            Some(Token::MinusEquals)
+                            Some(Token::MinusAssign)
                         },
                         _ if self.last.is_next_unary() => Some(Token::UnaryMinus),
                         _ => Some(Token::Minus),
@@ -558,7 +558,7 @@ impl<'a> TokenIterator<'a> {
                     return match self.char_stream.peek() {
                         Some(&'=') => {
                             self.char_stream.next();
-                            Some(Token::MultiplyEquals)
+                            Some(Token::MultiplyAssign)
                         },
                         _ => Some(Token::Multiply)
                     }
@@ -592,7 +592,7 @@ impl<'a> TokenIterator<'a> {
                         }
                         Some(&'=') => {
                             self.char_stream.next();
-                            return Some(Token::DivideEquals);
+                            return Some(Token::DivideAssign);
                         }
                         _ => return Some(Token::Divide),
                     }
@@ -621,7 +621,7 @@ impl<'a> TokenIterator<'a> {
                             return match self.char_stream.peek() {
                                 Some(&'=') => {
                                     self.char_stream.next();
-                                    Some(Token::LeftShiftEquals)
+                                    Some(Token::LeftShiftAssign)
                                 },
                                 _ => {
                                     self.char_stream.next();
@@ -643,7 +643,7 @@ impl<'a> TokenIterator<'a> {
                             return match self.char_stream.peek() {
                                 Some(&'=') => {
                                     self.char_stream.next();
-                                    Some(Token::RightShiftEquals)
+                                    Some(Token::RightShiftAssign)
                                 },
                                 _ => {
                                     self.char_stream.next();
@@ -671,7 +671,7 @@ impl<'a> TokenIterator<'a> {
                         }
                         Some(&'=') => {
                             self.char_stream.next();
-                            return Some(Token::OrEquals);
+                            return Some(Token::OrAssign);
                         }
                         _ => return Some(Token::Pipe),
                     }
@@ -684,7 +684,7 @@ impl<'a> TokenIterator<'a> {
                         }
                         Some(&'=') => {
                             self.char_stream.next();
-                            return Some(Token::AndEquals);
+                            return Some(Token::AndAssign);
                         }
                         _ => return Some(Token::Ampersand),
                     }
@@ -693,7 +693,7 @@ impl<'a> TokenIterator<'a> {
                     match self.char_stream.peek() {
                         Some(&'=') => {
                             self.char_stream.next();
-                            return Some(Token::XOrEquals);
+                            return Some(Token::XOrAssign);
                         }
                         _ => return Some(Token::XOr)
                     }
@@ -702,7 +702,7 @@ impl<'a> TokenIterator<'a> {
                     match self.char_stream.peek() {
                         Some(&'=') => {
                             self.char_stream.next();
-                            return Some(Token::ModuloEquals);
+                            return Some(Token::ModuloAssign);
                         }
                         _ => return Some(Token::Modulo)
                     }
@@ -711,7 +711,7 @@ impl<'a> TokenIterator<'a> {
                     match self.char_stream.peek() {
                         Some(&'=') => {
                             self.char_stream.next();
-                            return Some(Token::PowerOfEquals);
+                            return Some(Token::PowerOfAssign);
                         }
                         _ => return Some(Token::PowerOf)
                     }
@@ -745,17 +745,17 @@ pub fn lex(input: &str) -> TokenIterator {
 fn get_precedence(token: &Token) -> i32 {
     match *token {
         Token::Equals
-        | Token::PlusEquals
-        | Token::MinusEquals
-        | Token::MultiplyEquals
-        | Token::DivideEquals
-        | Token::LeftShiftEquals
-        | Token::RightShiftEquals
-        | Token::AndEquals
-        | Token::OrEquals
-        | Token::XOrEquals
-        | Token::ModuloEquals
-        | Token::PowerOfEquals => 10,
+        | Token::PlusAssign
+        | Token::MinusAssign
+        | Token::MultiplyAssign
+        | Token::DivideAssign
+        | Token::LeftShiftAssign
+        | Token::RightShiftAssign
+        | Token::AndAssign
+        | Token::OrAssign
+        | Token::XOrAssign
+        | Token::ModuloAssign
+        | Token::PowerOfAssign => 10,
         Token::Or
         | Token::XOr
         | Token::Pipe  => 11,
@@ -959,14 +959,14 @@ fn parse_binop<'a>(input: &mut Peekable<TokenIterator<'a>>,
                 Token::Multiply => Expr::FnCall("*".to_string(), vec![lhs_curr, rhs]),
                 Token::Divide => Expr::FnCall("/".to_string(), vec![lhs_curr, rhs]),
                 Token::Equals => Expr::Assignment(Box::new(lhs_curr), Box::new(rhs)),
-                Token::PlusEquals  => {
+                Token::PlusAssign  => {
                     let lhs_copy = lhs_curr.clone();
                     Expr::Assignment(
                         Box::new(lhs_curr),
                         Box::new(Expr::FnCall("+".to_string(), vec![lhs_copy, rhs]))
                     )
                 },
-                Token::MinusEquals  => {
+                Token::MinusAssign  => {
                     let lhs_copy = lhs_curr.clone();
                     Expr::Assignment(
                         Box::new(lhs_curr),
@@ -987,35 +987,35 @@ fn parse_binop<'a>(input: &mut Peekable<TokenIterator<'a>>,
                 Token::Or => Expr::FnCall("||".to_string(), vec![lhs_curr, rhs]),
                 Token::And => Expr::FnCall("&&".to_string(), vec![lhs_curr, rhs]),
                 Token::XOr => Expr::FnCall("^".to_string(), vec![lhs_curr, rhs]),
-                Token::OrEquals => {
+                Token::OrAssign => {
                     let lhs_copy = lhs_curr.clone();
                     Expr::Assignment(
                         Box::new(lhs_curr),
                         Box::new(Expr::FnCall("|".to_string(), vec![lhs_copy, rhs]))
                     )
                 },
-                Token::AndEquals => {
+                Token::AndAssign => {
                     let lhs_copy = lhs_curr.clone();
                     Expr::Assignment(
                         Box::new(lhs_curr),
                         Box::new(Expr::FnCall("&".to_string(), vec![lhs_copy, rhs]))
                     )
                 },
-                Token::XOrEquals => {
+                Token::XOrAssign => {
                     let lhs_copy = lhs_curr.clone();
                     Expr::Assignment(
                         Box::new(lhs_curr),
                         Box::new(Expr::FnCall("^".to_string(), vec![lhs_copy, rhs]))
                     )
                 },
-                Token::MultiplyEquals => {
+                Token::MultiplyAssign => {
                     let lhs_copy = lhs_curr.clone();
                     Expr::Assignment(
                         Box::new(lhs_curr),
                         Box::new(Expr::FnCall("*".to_string(), vec![lhs_copy, rhs]))
                     )
                 },
-                Token::DivideEquals => {
+                Token::DivideAssign => {
                     let lhs_copy = lhs_curr.clone();
                     Expr::Assignment(
                         Box::new(lhs_curr),
@@ -1027,14 +1027,14 @@ fn parse_binop<'a>(input: &mut Peekable<TokenIterator<'a>>,
                 },
                 Token::LeftShift => Expr::FnCall("<<".to_string(), vec![lhs_curr, rhs]),
                 Token::RightShift => Expr::FnCall(">>".to_string(), vec![lhs_curr, rhs]),
-                Token::LeftShiftEquals => {
+                Token::LeftShiftAssign => {
                     let lhs_copy = lhs_curr.clone();
                     Expr::Assignment(
                         Box::new(lhs_curr),
                         Box::new(Expr::FnCall("<<".to_string(), vec![lhs_copy, rhs]))
                     )
                 },
-                Token::RightShiftEquals => {
+                Token::RightShiftAssign => {
                     let lhs_copy = lhs_curr.clone();
                     Expr::Assignment(
                         Box::new(lhs_curr),
@@ -1043,7 +1043,7 @@ fn parse_binop<'a>(input: &mut Peekable<TokenIterator<'a>>,
                 },
                 Token::Ampersand => Expr::FnCall("&".to_string(), vec![lhs_curr, rhs]),
                 Token::Modulo => Expr::FnCall("%".to_string(), vec![lhs_curr, rhs]),
-                Token::ModuloEquals => {
+                Token::ModuloAssign => {
                     let lhs_copy = lhs_curr.clone();
                     Expr::Assignment(
                         Box::new(lhs_curr),
@@ -1051,7 +1051,7 @@ fn parse_binop<'a>(input: &mut Peekable<TokenIterator<'a>>,
                     )
                 },
                 Token::PowerOf => Expr::FnCall("~".to_string(), vec![lhs_curr, rhs]),
-                Token::PowerOfEquals => {
+                Token::PowerOfAssign => {
                     let lhs_copy = lhs_curr.clone();
                     Expr::Assignment(
                         Box::new(lhs_curr),
