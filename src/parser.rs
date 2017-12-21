@@ -1225,7 +1225,7 @@ fn parse_fn<'a>(input: &mut Peekable<TokenIterator<'a>>) -> Result<FnDef, ParseE
         }
     }
 
-    let body = try!(parse_block(input));
+    let body = parse_block(input)?;
 
     Ok(FnDef {
         name: name,

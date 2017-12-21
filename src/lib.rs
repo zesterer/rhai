@@ -16,7 +16,7 @@
 //!
 //! And the Rust part:
 //!
-//! ```rust
+//! ```rust,no_run
 //! use rhai::{Engine, RegisterFn};
 //!
 //! fn compute_something(x: i64) -> bool {
@@ -25,13 +25,7 @@
 //!
 //! let mut engine = Engine::new();
 //! engine.register_fn("compute_something", compute_something);
-//! # // Very ugly hack incoming, TODO (maybe mark as no_run?)
-//! # use std::fs::{File, remove_file};
-//! # use std::io::Write;
-//! # let mut f = File::create("my_script.rhai").unwrap();
-//! # let _ = write!(f, "{}", "fn f(x) { if x == 1 { return 1; } x * f(x-1) } compute_something(f(10))");
 //! assert_eq!(engine.eval_file::<bool>("my_script.rhai"), Ok(true));
-//! # let _ = remove_file("my_script.rhai");
 //! ```
 //!
 //! [Check out the README on GitHub for more information!](https://github.com/jonathandturner/rhai)

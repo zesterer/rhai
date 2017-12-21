@@ -553,12 +553,8 @@ impl Engine {
                     Ok(g) => {
                         if *g {
                             match self.eval_stmt(scope, body) {
-                                Err(EvalAltResult::LoopBreak) => {
-                                    return Ok(Box::new(()));
-                                }
-                                Err(x) => {
-                                    return Err(x);
-                                }
+                                Err(EvalAltResult::LoopBreak) => return Ok(Box::new(())),
+                                Err(x) => return Err(x),
                                 _ => (),
                             }
                         } else {
@@ -570,12 +566,8 @@ impl Engine {
             },
             Stmt::Loop(ref body) => loop {
                 match self.eval_stmt(scope, body) {
-                    Err(EvalAltResult::LoopBreak) => {
-                        return Ok(Box::new(()));
-                    }
-                    Err(x) => {
-                        return Err(x);
-                    }
+                    Err(EvalAltResult::LoopBreak) => return Ok(Box::new(())),
+                    Err(x) => return Err(x),
                     _ => (),
                 }
             },
@@ -591,9 +583,7 @@ impl Engine {
                         let i = self.eval_expr(scope, v)?;
                         scope.push((name.clone(), i));
                     }
-                    None => {
-                        scope.push((name.clone(), Box::new(())));
-                    }
+                    None => scope.push((name.clone(), Box::new(()))),
                 };
                 Ok(Box::new(()))
             }
@@ -682,9 +672,9 @@ impl Engine {
 
             if f.read_to_string(&mut contents).is_ok() {
                 if let e @ Err(_) = self.consume(&contents) {
-                    return e;
+                    e
                 } else {
-                    return Ok(());
+                    Ok(())
                 }
             } else {
                 Err(EvalAltResult::ErrorCantOpenScriptFile)
@@ -698,11 +688,7 @@ impl Engine {
     /// Useful for when you don't need the result, but still need
     /// to keep track of possible errors
     pub fn consume(&mut self, input: &str) -> Result<(), EvalAltResult> {
-        let mut scope: Scope = Scope::new();
-
-        let res = self.consume_with_scope(&mut scope, input);
-
-        res
+		self.consume_with_scope(&mut Scope::new(), input)
     }
 
     /// Evaluate a string with own scoppe, but only return errors, if there are any.
@@ -784,78 +770,30 @@ impl Engine {
             )
         }
 
-        fn add<T: Add>(x: T, y: T) -> <T as Add>::Output {
-            x + y
-        }
-        fn sub<T: Sub>(x: T, y: T) -> <T as Sub>::Output {
-            x - y
-        }
-        fn mul<T: Mul>(x: T, y: T) -> <T as Mul>::Output {
-            x * y
-        }
-        fn div<T: Div>(x: T, y: T) -> <T as Div>::Output {
-            x / y
-        }
-        fn neg<T: Neg>(x: T) -> <T as Neg>::Output {
-            -x
-        }
-        fn lt<T: PartialOrd>(x: T, y: T) -> bool {
-            x < y
-        }
-        fn lte<T: PartialOrd>(x: T, y: T) -> bool {
-            x <= y
-        }
-        fn gt<T: PartialOrd>(x: T, y: T) -> bool {
-            x > y
-        }
-        fn gte<T: PartialOrd>(x: T, y: T) -> bool {
-            x >= y
-        }
-        fn eq<T: PartialEq>(x: T, y: T) -> bool {
-            x == y
-        }
-        fn ne<T: PartialEq>(x: T, y: T) -> bool {
-            x != y
-        }
-        fn and(x: bool, y: bool) -> bool {
-            x && y
-        }
-        fn or(x: bool, y: bool) -> bool {
-            x || y
-        }
-        fn not(x: bool) -> bool {
-            !x
-        }
-        fn concat(x: String, y: String) -> String {
-            x + &y
-        }
-        fn binary_and<T: BitAnd>(x: T, y: T) -> <T as BitAnd>::Output {
-            x & y
-        }
-        fn binary_or<T: BitOr>(x: T, y: T) -> <T as BitOr>::Output {
-            x | y
-        }
-        fn binary_xor<T: BitXor>(x: T, y: T) -> <T as BitXor>::Output {
-            x ^ y
-        }
-        fn left_shift<T: Shl<T>>(x: T, y: T) -> <T as Shl<T>>::Output {
-            x.shl(y)
-        }
-        fn right_shift<T: Shr<T>>(x: T, y: T) -> <T as Shr<T>>::Output {
-            x.shr(y)
-        }
-        fn modulo<T: Rem<T>>(x: T, y: T) -> <T as Rem<T>>::Output {
-            x % y
-        }
-        fn pow_i64_i64(x: i64, y: i64) -> i64 {
-            x.pow(y as u32)
-        }
-        fn pow_f64_f64(x: f64, y: f64) -> f64 {
-            x.powf(y)
-        }
-        fn pow_f64_i64(x: f64, y: i64) -> f64 {
-            x.powi(y as i32)
-        }
+        fn add<T: Add>(x: T, y: T) -> <T as Add>::Output { x + y }
+        fn sub<T: Sub>(x: T, y: T) -> <T as Sub>::Output { x - y }
+        fn mul<T: Mul>(x: T, y: T) -> <T as Mul>::Output { x * y }
+        fn div<T: Div>(x: T, y: T) -> <T as Div>::Output { x / y }
+        fn neg<T: Neg>(x: T) -> <T as Neg>::Output       { -x }
+        fn lt<T: PartialOrd>(x: T, y: T) -> bool  { x < y  }
+        fn lte<T: PartialOrd>(x: T, y: T) -> bool { x <= y }
+        fn gt<T: PartialOrd>(x: T, y: T) -> bool  { x > y  }
+        fn gte<T: PartialOrd>(x: T, y: T) -> bool { x >= y }
+        fn eq<T: PartialEq>(x: T, y: T) -> bool   { x == y }
+        fn ne<T: PartialEq>(x: T, y: T) -> bool   { x != y }
+        fn and(x: bool, y: bool) -> bool { x && y }
+        fn or(x: bool, y: bool) -> bool  { x || y }
+        fn not(x: bool) -> bool { !x }
+        fn concat(x: String, y: String) -> String { x + &y }
+        fn binary_and<T: BitAnd>(x: T, y: T) -> <T as BitAnd>::Output  { x & y }
+        fn binary_or<T: BitOr>(x: T, y: T) -> <T as BitOr>::Output     { x | y }
+        fn binary_xor<T: BitXor>(x: T, y: T) -> <T as BitXor>::Output  { x ^ y }
+        fn left_shift<T: Shl<T>>(x: T, y: T) -> <T as Shl<T>>::Output  { x.shl(y) }
+        fn right_shift<T: Shr<T>>(x: T, y: T) -> <T as Shr<T>>::Output { x.shr(y) }
+        fn modulo<T: Rem<T>>(x: T, y: T) -> <T as Rem<T>>::Output { x % y }
+        fn pow_i64_i64(x: i64, y: i64) -> i64 { x.pow(y as u32) }
+        fn pow_f64_f64(x: f64, y: f64) -> f64 { x.powf(y) }
+        fn pow_f64_i64(x: f64, y: i64) -> f64 { x.powi(y as i32) }
 
         reg_op!(engine, "+", add, i32, i64, u32, u64, f32, f64);
         reg_op!(engine, "-", sub, i32, i64, u32, u64, f32, f64);

@@ -25,9 +25,7 @@ impl<T> Any for T
         Box::new(self.clone())
     }
 
-    fn _closed(&self) -> _Private {
-        _Private
-    }
+    fn _closed(&self) -> _Private { _Private }
 }
 
 impl Any {
