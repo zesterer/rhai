@@ -4,6 +4,7 @@ use std::cmp::{PartialEq, PartialOrd};
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
+use std::sync::Arc;
 use std::ops::{Add, BitAnd, BitOr, BitXor, Deref, Div, Mul, Neg, Rem, Shl, Shr, Sub};
 
 use any::{Any, AnyExt};
@@ -108,9 +109,10 @@ pub struct FnSpec {
 ///     }
 /// }
 /// ```
+#[derive(Clone)]
 pub struct Engine {
-    /// A hashmap containing all functions know to the engine
-    pub fns: HashMap<FnSpec, FnIntExt>,
+    /// A hashmap containing all functions known to the engine
+    pub fns: HashMap<FnSpec, Arc<FnIntExt>>,
 }
 
 pub enum FnIntExt {
@@ -174,7 +176,7 @@ impl Engine {
             .get(&spec)
             .or_else(|| self.fns.get(&spec1))
             .ok_or(EvalAltResult::ErrorFunctionNotFound)
-            .and_then(move |f| match *f {
+            .and_then(move |f| match **f {
                 FnIntExt::Ext(ref f) => f(args),
                 FnIntExt::Int(ref f) => {
                     let mut scope = Scope::new();
@@ -198,7 +200,7 @@ impl Engine {
 
         let spec = FnSpec { ident, args };
 
-        self.fns.insert(spec, FnIntExt::Ext(f));
+        self.fns.insert(spec, Arc::new(FnIntExt::Ext(f)));
     }
 
     /// Register a type for use with Engine. Keep in mind that
@@ -639,7 +641,7 @@ impl Engine {
                         args: None,
                     };
 
-                    self.fns.insert(spec, FnIntExt::Int(local_f));
+                    self.fns.insert(spec, Arc::new(FnIntExt::Int(local_f)));
                 }
 
                 for o in os {
@@ -688,7 +690,7 @@ impl Engine {
     /// Useful for when you don't need the result, but still need
     /// to keep track of possible errors
     pub fn consume(&mut self, input: &str) -> Result<(), EvalAltResult> {
-		self.consume_with_scope(&mut Scope::new(), input)
+        self.consume_with_scope(&mut Scope::new(), input)
     }
 
     /// Evaluate a string with own scoppe, but only return errors, if there are any.
@@ -718,7 +720,7 @@ impl Engine {
                         args: None,
                     };
 
-                    self.fns.insert(spec, FnIntExt::Int(local_f));
+                    self.fns.insert(spec, Arc::new(FnIntExt::Int(local_f)));
                 }
 
                 for o in os {
