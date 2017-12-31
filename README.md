@@ -18,7 +18,7 @@ Rhai's current feature set:
 
 You can install Rhai using crates by adding this line to your dependences:
 
-```
+```toml
 [dependencies]
 rhai = "0.8.1"
 ```
