@@ -34,6 +34,13 @@
 #![allow(warnings, unknown_lints, type_complexity, new_without_default_derive,
          needless_pass_by_value, too_many_arguments)]
 
+// needs to be here, because order matters for macros
+macro_rules! debug_println {
+    () => (#[cfg(feature = "debug_msgs")] {print!("\n")});
+    ($fmt:expr) => (#[cfg(feature = "debug_msgs")] {print!(concat!($fmt, "\n"))});
+    ($fmt:expr, $($arg:tt)*) => (#[cfg(feature = "debug_msgs")] {print!(concat!($fmt, "\n"), $($arg)*)});
+}
+
 mod any;
 mod call;
 mod engine;
@@ -46,3 +53,4 @@ mod tests;
 pub use any::Any;
 pub use engine::{Engine, EvalAltResult, Scope};
 pub use fn_register::RegisterFn;
+

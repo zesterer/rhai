@@ -12,3 +12,6 @@ include = [
     "scripts/*.rhai",
     "Cargo.toml"
 ]
+
+[features]
+debug_msgs = []
