@@ -109,6 +109,7 @@ pub enum Expr {
     Array(Vec<Expr>),
     True,
     False,
+    Unit,
 }
 
 #[derive(Debug, Clone)]
@@ -1065,9 +1066,14 @@ fn parse_binop<'a>(input: &mut Peekable<TokenIterator<'a>>,
 }
 
 fn parse_expr<'a>(input: &mut Peekable<TokenIterator<'a>>) -> Result<Expr, ParseError> {
-    let lhs = try!(parse_unary(input));
+    match input.peek() {
+        Some(Token::RParen) => Ok(Expr::Unit),
+        _ => {
+            let lhs = try!(parse_unary(input));
 
-    parse_binop(input, 0, lhs)
+            parse_binop(input, 0, lhs)
+        }
+    }
 }
 
 fn parse_if<'a>(input: &mut Peekable<TokenIterator<'a>>) -> Result<Stmt, ParseError> {
