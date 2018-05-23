@@ -499,6 +499,7 @@ impl Engine {
             ),
             Expr::True => Ok(Box::new(true)),
             Expr::False => Ok(Box::new(false)),
+            Expr::Unit => Ok(Box::new(())),
         }
     }
 
@@ -796,6 +797,7 @@ impl Engine {
         fn pow_i64_i64(x: i64, y: i64) -> i64 { x.pow(y as u32) }
         fn pow_f64_f64(x: f64, y: f64) -> f64 { x.powf(y) }
         fn pow_f64_i64(x: f64, y: i64) -> f64 { x.powi(y as i32) }
+        fn unit_eq(a: (), b: ()) -> bool { true }
 
         reg_op!(engine, "+", add, i32, i64, u32, u64, f32, f64);
         reg_op!(engine, "-", sub, i32, i64, u32, u64, f32, f64);
@@ -827,6 +829,7 @@ impl Engine {
         reg_un!(engine, "!", not, bool);
 
         engine.register_fn("+", concat);
+        engine.register_fn("==", unit_eq);
 
         // engine.register_fn("[]", idx);
         // FIXME?  Registering array lookups are a special case because we want to return boxes
