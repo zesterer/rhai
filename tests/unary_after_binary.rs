@@ -1,4 +1,6 @@
-use engine::Engine;
+extern crate rhai;
+
+use rhai::Engine;
 
 #[test]
 // TODO also add test case for unary after compound

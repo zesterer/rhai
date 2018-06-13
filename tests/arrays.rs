@@ -1,5 +1,7 @@
-use engine::Engine;
-use fn_register::RegisterFn;
+extern crate rhai;
+
+use rhai::Engine;
+use rhai::RegisterFn;
 
 #[test]
 fn test_arrays() {

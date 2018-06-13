@@ -1,4 +1,6 @@
-use engine::{Engine, Scope};
+extern crate rhai;
+
+use rhai::{Engine, Scope};
 
 #[test]
 fn test_var_scope() {
