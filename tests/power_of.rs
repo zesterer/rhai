@@ -1,4 +1,6 @@
-use engine::Engine;
+extern crate rhai;
+
+use rhai::Engine;
 
 #[test]
 fn test_power_of() {

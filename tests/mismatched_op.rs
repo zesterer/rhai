@@ -1,4 +1,6 @@
-use engine::{Engine, EvalAltResult};
+extern crate rhai;
+
+use rhai::{Engine, EvalAltResult};
 
 #[test]
 fn test_mismatched_op() {
