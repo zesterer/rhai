@@ -14,7 +14,7 @@ use call::FunArgs;
 
 #[derive(Debug)]
 pub enum EvalAltResult {
-    ErrorFunctionNotFound,
+    ErrorFunctionNotFound(String),
     ErrorFunctionArgMismatch,
     ErrorFunctionCallNotSupported,
     ErrorIndexMismatch,
@@ -29,12 +29,22 @@ pub enum EvalAltResult {
     Return(Box<Any>),
 }
 
+impl EvalAltResult {
+    fn as_str(&self) -> Option<&str> {
+        match *self {
+            EvalAltResult::ErrorVariableNotFound(ref s) => Some(s.as_str()),
+            EvalAltResult::ErrorFunctionNotFound(ref s) => Some(s.as_str()),
+            _ => None
+        }
+    }
+}
+
 impl PartialEq for EvalAltResult {
     fn eq(&self, other: &Self) -> bool {
         use EvalAltResult::*;
 
         match (self, other) {
-            (&ErrorFunctionNotFound, &ErrorFunctionNotFound) => true,
+            (&ErrorFunctionNotFound(ref a), &ErrorFunctionNotFound(ref b)) => a == b,
             (&ErrorFunctionArgMismatch, &ErrorFunctionArgMismatch) => true,
             (&ErrorFunctionCallNotSupported, &ErrorFunctionCallNotSupported) => true,
             (&ErrorIndexMismatch, &ErrorIndexMismatch) => true,
@@ -54,7 +64,7 @@ impl PartialEq for EvalAltResult {
 impl Error for EvalAltResult {
     fn description(&self) -> &str {
         match *self {
-            EvalAltResult::ErrorFunctionNotFound => "Function not found",
+            EvalAltResult::ErrorFunctionNotFound(_) => "Function not found",
             EvalAltResult::ErrorFunctionArgMismatch => "Function argument types do not match",
             EvalAltResult::ErrorFunctionCallNotSupported => {
                 "Function call with > 2 argument not supported"
@@ -85,7 +95,11 @@ impl Error for EvalAltResult {
 
 impl fmt::Display for EvalAltResult {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.description())
+        if let Some(s) = self.as_str() {
+            write!(f, "{}: {}", self.description(), s)
+        } else {
+            write!(f, "{}", self.description())
+        }
     }
 }
 
@@ -170,12 +184,17 @@ impl Engine {
             ident: ident.clone(),
             args: Some(args.iter().map(|a| <Any as Any>::type_id(&**a)).collect()),
         };
-        let spec1 = FnSpec { ident, args: None };
 
         self.fns
             .get(&spec)
-            .or_else(|| self.fns.get(&spec1))
-            .ok_or(EvalAltResult::ErrorFunctionNotFound)
+            .or_else(|| {
+                let spec1 = FnSpec { ident: ident.clone(), args: None };
+                self.fns.get(&spec1)
+            })
+            .ok_or_else(|| {
+                let typenames = args.iter().map(|x| self.nice_type_name((&**x).box_clone())).collect::<Vec<_>>();
+                EvalAltResult::ErrorFunctionNotFound(format!("{} ({})", ident, typenames.join(",")))
+            })
             .and_then(move |f| match **f {
                 FnIntExt::Ext(ref f) => f(args),
                 FnIntExt::Int(ref f) => {
@@ -590,6 +609,23 @@ impl Engine {
                 };
                 Ok(Box::new(()))
             }
+        }
+    }
+
+    fn nice_type_name(&self, b: Box<Any>) -> String {
+        if b.is::<String>() {
+            "string".into()
+        } else
+        if b.is::<i64>() {
+            "integer".into()
+        } else
+        if b.is::<f64>() {
+            "float".into()
+        } else
+        if b.is::<Vec<Box<Any>>>() {
+            "array".into()
+        } else {
+            format!("<unknown> {:?}", b.type_id())
         }
     }
 
