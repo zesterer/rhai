@@ -22,7 +22,7 @@ pub enum EvalAltResult {
     ErrorVariableNotFound(String),
     ErrorFunctionArityNotSupported,
     ErrorAssignmentToUnknownLHS,
-    ErrorMismatchOutputType,
+    ErrorMismatchOutputType(String),
     ErrorCantOpenScriptFile,
     InternalErrorMalformedDotExpression,
     LoopBreak,
@@ -34,6 +34,7 @@ impl EvalAltResult {
         match *self {
             EvalAltResult::ErrorVariableNotFound(ref s) => Some(s.as_str()),
             EvalAltResult::ErrorFunctionNotFound(ref s) => Some(s.as_str()),
+            EvalAltResult::ErrorMismatchOutputType(ref s) => Some(s.as_str()),
             _ => None
         }
     }
@@ -52,7 +53,7 @@ impl PartialEq for EvalAltResult {
             (&ErrorVariableNotFound(ref a), &ErrorVariableNotFound(ref b)) => a == b,
             (&ErrorFunctionArityNotSupported, &ErrorFunctionArityNotSupported) => true,
             (&ErrorAssignmentToUnknownLHS, &ErrorAssignmentToUnknownLHS) => true,
-            (&ErrorMismatchOutputType, &ErrorMismatchOutputType) => true,
+            (&ErrorMismatchOutputType(ref a), &ErrorMismatchOutputType(ref b)) => a == b,
             (&ErrorCantOpenScriptFile, &ErrorCantOpenScriptFile) => true,
             (&InternalErrorMalformedDotExpression, &InternalErrorMalformedDotExpression) => true,
             (&LoopBreak, &LoopBreak) => true,
@@ -78,7 +79,7 @@ impl Error for EvalAltResult {
             EvalAltResult::ErrorAssignmentToUnknownLHS => {
                 "Assignment to an unsupported left-hand side"
             }
-            EvalAltResult::ErrorMismatchOutputType => "Cast of output failed",
+            EvalAltResult::ErrorMismatchOutputType(_) => "Cast of output failed",
             EvalAltResult::ErrorCantOpenScriptFile => "Cannot open script file",
             EvalAltResult::InternalErrorMalformedDotExpression => {
                 "[Internal error] Unexpected expression in dot expression"
@@ -123,10 +124,11 @@ pub struct FnSpec {
 ///     }
 /// }
 /// ```
-#[derive(Clone)]
+// #[derive(Clone)]
 pub struct Engine {
     /// A hashmap containing all functions known to the engine
     pub fns: HashMap<FnSpec, Arc<FnIntExt>>,
+    pub type_names: HashMap<TypeId,String>,
 }
 
 pub enum FnIntExt {
@@ -163,7 +165,7 @@ impl Engine {
             .and_then(|b| {
                 b.downcast()
                     .map(|b| *b)
-                    .map_err(|_| EvalAltResult::ErrorMismatchOutputType)
+                    .map_err(|a| EvalAltResult::ErrorMismatchOutputType(self.nice_type_name(a)))
             })
     }
 
@@ -226,6 +228,13 @@ impl Engine {
     /// your type must implement Clone.
     pub fn register_type<T: Any>(&mut self) {
         // currently a no-op, exists for future extensibility
+    }
+
+    /// Register a type, providing a name for nice error messages.
+    pub fn register_type_name<T: Any>(&mut self, name: &str) {
+        self.register_type::<T>();
+        debug_println!("register type {}: {:?}", name, TypeId::of::<T>());
+        self.type_names.insert(TypeId::of::<T>(), name.into());
     }
 
     /// Register a get function for a member of a registered type
@@ -613,17 +622,9 @@ impl Engine {
     }
 
     fn nice_type_name(&self, b: Box<Any>) -> String {
-        if b.is::<String>() {
-            "string".into()
-        } else
-        if b.is::<i64>() {
-            "integer".into()
-        } else
-        if b.is::<f64>() {
-            "float".into()
-        } else
-        if b.is::<Vec<Box<Any>>>() {
-            "array".into()
+        let tid = (&*b).type_id();
+        if let Some(name) = self.type_names.get(&tid) {
+            name.to_string()
         } else {
             format!("<unknown> {:?}", b.type_id())
         }
@@ -692,7 +693,7 @@ impl Engine {
 
                 match x.downcast::<T>() {
                     Ok(out) => Ok(*out),
-                    Err(_) => Err(EvalAltResult::ErrorMismatchOutputType),
+                    Err(a) => Err(EvalAltResult::ErrorMismatchOutputType(self.nice_type_name(a))),
                 }
             }
             Err(_) => Err(EvalAltResult::ErrorFunctionArgMismatch),
@@ -775,15 +776,17 @@ impl Engine {
     /// Register the default library. That means, numberic types, char, bool
     /// String, arithmetics and string concatenations.
     pub fn register_default_lib(engine: &mut Engine) {
-        engine.register_type::<i32>();
-        engine.register_type::<u32>();
-        engine.register_type::<i64>();
-        engine.register_type::<u64>();
-        engine.register_type::<f32>();
-        engine.register_type::<f64>();
-        engine.register_type::<String>();
-        engine.register_type::<char>();
-        engine.register_type::<bool>();
+        engine.register_type_name::<i32>("i32");
+        engine.register_type_name::<u32>("u32");
+        engine.register_type_name::<i64>("integer");
+        engine.register_type_name::<u64>("u64");
+        engine.register_type_name::<u64>("usize");
+        engine.register_type_name::<f32>("f64");
+        engine.register_type_name::<f64>("float");
+        engine.register_type_name::<String>("string");
+        engine.register_type_name::<char>("char");
+        engine.register_type_name::<bool>("boolean");
+        engine.register_type_name::<Vec<Box<Any>>>("array");
 
         macro_rules! reg_op {
             ($engine:expr, $x:expr, $op:expr, $( $y:ty ),*) => (
@@ -871,12 +874,14 @@ impl Engine {
         // FIXME?  Registering array lookups are a special case because we want to return boxes
         // directly let ent = engine.fns.entry("[]".to_string()).or_insert_with(Vec::new);
         // (*ent).push(FnType::ExternalFn2(Box::new(idx)));
+
     }
 
     /// Make a new engine
     pub fn new() -> Engine {
         let mut engine = Engine {
             fns: HashMap::new(),
+            type_names: HashMap::new(),
         };
 
         Engine::register_default_lib(&mut engine);
