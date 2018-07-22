@@ -124,7 +124,7 @@ pub struct FnSpec {
 ///     }
 /// }
 /// ```
-// #[derive(Clone)]
+#[derive(Clone)]
 pub struct Engine {
     /// A hashmap containing all functions known to the engine
     pub fns: HashMap<FnSpec, Arc<FnIntExt>>,
