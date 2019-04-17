@@ -622,7 +622,7 @@ impl Engine {
     }
 
     fn nice_type_name(&self, b: Box<Any>) -> String {
-        let tid = (&*b).type_id();
+        let tid = <Any as Any>::type_id(&*b);
         if let Some(name) = self.type_names.get(&tid) {
             name.to_string()
         } else {

@@ -37,7 +37,7 @@ impl Any {
     #[inline]
     pub fn is<T: Any>(&self) -> bool {
         let t = TypeId::of::<T>();
-        let boxed = self.type_id();
+        let boxed = <Any as Any>::type_id(self);
 
         t == boxed
     }
