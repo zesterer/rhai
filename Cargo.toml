@@ -1,6 +1,6 @@
 [package]
 name = "rhai"
-version = "0.9.0"
+version = "0.9.1"
 authors = ["Jonathan Turner", "Lukáš Hozda"]
 description = "Embedded scripting for Rust"
 homepage = "https://github.com/jonathandturner/rhai"
