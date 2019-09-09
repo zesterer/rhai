@@ -320,7 +320,7 @@ let x = 10;
 loop {
     print(x);
     x = x - 1;
-	if x == 0 { break; }
+    if x == 0 { break; }
 }
 ```
 
