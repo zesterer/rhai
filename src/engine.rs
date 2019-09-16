@@ -780,8 +780,8 @@ impl Engine {
         engine.register_type_name::<u32>("u32");
         engine.register_type_name::<i64>("integer");
         engine.register_type_name::<u64>("u64");
-        engine.register_type_name::<u64>("usize");
-        engine.register_type_name::<f32>("f64");
+        engine.register_type_name::<usize>("usize");
+        engine.register_type_name::<f32>("f32");
         engine.register_type_name::<f64>("float");
         engine.register_type_name::<String>("string");
         engine.register_type_name::<char>("char");
