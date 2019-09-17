@@ -10,7 +10,6 @@ Rhai's current feature set:
 * Easy-to-use language based on JS+Rust
 * Support for overloaded functions
 * No additional dependencies
-* No unsafe code
 
 **Note:** Currently, the version is 0.9.1, so the language and APIs may change before they stabilize.*
 
