@@ -30,9 +30,7 @@
 //!
 //! [Check out the README on GitHub for more information!](https://github.com/jonathandturner/rhai)
 
-// lints required by Rhai
-#![allow(warnings, unknown_lints, type_complexity, new_without_default_derive,
-         needless_pass_by_value, too_many_arguments)]
+#![allow(non_snake_case)]
 
 // needs to be here, because order matters for macros
 macro_rules! debug_println {
@@ -50,4 +48,3 @@ mod parser;
 pub use any::Any;
 pub use engine::{Engine, EvalAltResult, Scope};
 pub use fn_register::RegisterFn;
-

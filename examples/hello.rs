@@ -1,4 +1,3 @@
-extern crate rhai;
 use rhai::Engine;
 
 fn main() {

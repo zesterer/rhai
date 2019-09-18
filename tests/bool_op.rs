@@ -1,5 +1,3 @@
-extern crate rhai;
-
 use rhai::Engine;
 
 #[test]

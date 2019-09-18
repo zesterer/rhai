@@ -1,7 +1,7 @@
 use std::any::TypeId;
 
-use any::Any;
-use engine::{Engine, EvalAltResult};
+use crate::any::Any;
+use crate::engine::{Engine, EvalAltResult};
 
 pub trait RegisterFn<FN, ARGS, RET> {
     fn register_fn(&mut self, name: &str, f: FN);
@@ -27,13 +27,14 @@ macro_rules! def_register {
             RET: Any,
         {
             fn register_fn(&mut self, name: &str, f: FN) {
-                let fun = move |mut args: Vec<&mut Any>| {
+                let fun = move |mut args: Vec<&mut dyn Any>| {
                     // Check for length at the beginning to avoid
                     // per-element bound checks.
                     if args.len() != count_args!($($par)*) {
                         return Err(EvalAltResult::ErrorFunctionArgMismatch);
                     }
 
+                    #[allow(unused_variables, unused_mut)]
                     let mut drain = args.drain(..);
                     $(
                     // Downcast every element, return in case of a type mismatch
@@ -43,7 +44,7 @@ macro_rules! def_register {
 
                     // Call the user-supplied function using ($clone) to
                     // potentially clone the value, otherwise pass the reference.
-                    Ok(Box::new(f($(($clone)($par)),*)) as Box<Any>)
+                    Ok(Box::new(f($(($clone)($par)),*)) as Box<dyn Any>)
                 };
                 self.register_fn_raw(name.to_owned(), Some(vec![$(TypeId::of::<$par>()),*]), Box::new(fun));
             }

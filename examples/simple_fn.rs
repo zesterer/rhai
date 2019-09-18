@@ -1,4 +1,3 @@
-extern crate rhai;
 use rhai::{Engine, RegisterFn};
 
 fn add(x: i64, y: i64) -> i64 {
