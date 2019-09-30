@@ -1,5 +1,3 @@
-extern crate rhai;
-
 use rhai::Engine;
 
 #[test]
@@ -23,8 +21,10 @@ fn test_internal_fn() {
 fn test_big_internal_fn() {
     let mut engine = Engine::new();
 
-    if let Ok(result) = engine.eval::<i64>("fn mathme(a, b, c, d, e, f) { a - b * c + d * e - f \
-                                            } mathme(100, 5, 2, 9, 6, 32)") {
+    if let Ok(result) = engine.eval::<i64>(
+        "fn mathme(a, b, c, d, e, f) { a - b * c + d * e - f \
+         } mathme(100, 5, 2, 9, 6, 32)",
+    ) {
         assert_eq!(result, 112);
     } else {
         assert!(false);

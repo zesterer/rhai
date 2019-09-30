@@ -1,4 +1,3 @@
-extern crate rhai;
 use rhai::{Engine, RegisterFn};
 
 #[derive(Clone)]

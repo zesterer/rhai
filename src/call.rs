@@ -1,10 +1,10 @@
 //! Helper module which defines `FnArgs`
 //! to make function calling easier.
 
-use any::Any;
+use crate::any::Any;
 
 pub trait FunArgs<'a> {
-    fn into_vec(self) -> Vec<&'a mut Any>;
+    fn into_vec(self) -> Vec<&'a mut dyn Any>;
 }
 
 macro_rules! impl_args {
@@ -13,11 +13,12 @@ macro_rules! impl_args {
         where
             $($p: Any + Clone),*
         {
-            fn into_vec(self) -> Vec<&'a mut Any> {
+            fn into_vec(self) -> Vec<&'a mut dyn Any> {
                 let ($($p,)*) = self;
 
+                #[allow(unused_variables, unused_mut)]
                 let mut v = Vec::new();
-                $(v.push($p as &mut Any);)*
+                $(v.push($p as &mut dyn Any);)*
 
                 v
             }

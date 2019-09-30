@@ -1,4 +1,3 @@
-extern crate rhai;
 use rhai::{Engine, RegisterFn};
 
 #[derive(Clone, Debug)]
@@ -24,6 +23,12 @@ fn main() {
     engine.register_fn("update", TestStruct::update);
     engine.register_fn("new_ts", TestStruct::new);
 
-    println!("{:?}", engine.eval::<TestStruct>("let x = new_ts(); x.update(); x"));
-    println!("{:?}", engine.eval::<TestStruct>("let x = [new_ts()]; x[0].update(); x[0]"));
+    println!(
+        "{:?}",
+        engine.eval::<TestStruct>("let x = new_ts(); x.update(); x")
+    );
+    println!(
+        "{:?}",
+        engine.eval::<TestStruct>("let x = [new_ts()]; x[0].update(); x[0]")
+    );
 }

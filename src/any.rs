@@ -4,7 +4,7 @@ use std::fmt;
 pub trait Any: StdAny {
     fn type_id(&self) -> TypeId;
 
-    fn box_clone(&self) -> Box<Any>;
+    fn box_clone(&self) -> Box<dyn Any>;
 
     /// This type may only be implemented by `rhai`.
     #[doc(hidden)]
@@ -12,8 +12,8 @@ pub trait Any: StdAny {
 }
 
 impl<T> Any for T
-    where
-        T: Clone + StdAny + ?Sized
+where
+    T: Clone + StdAny + ?Sized,
 {
     #[inline]
     fn type_id(&self) -> TypeId {
@@ -21,23 +21,24 @@ impl<T> Any for T
     }
 
     #[inline]
-    fn box_clone(&self) -> Box<Any> {
+    fn box_clone(&self) -> Box<dyn Any> {
         Box::new(self.clone())
     }
 
-    fn _closed(&self) -> _Private { _Private }
+    fn _closed(&self) -> _Private {
+        _Private
+    }
 }
 
-impl Any {
-    #[inline]
-    fn box_clone(&self) -> Box<Any> {
-        Any::box_clone(self)
-    }
-
+impl dyn Any {
+    //#[inline]
+    // fn box_clone(&self) -> Box<dyn Any> {
+    //     Any::box_clone(self)
+    // }
     #[inline]
     pub fn is<T: Any>(&self) -> bool {
         let t = TypeId::of::<T>();
-        let boxed = <Any as Any>::type_id(self);
+        let boxed = <dyn Any as Any>::type_id(self);
 
         t == boxed
     }
@@ -45,9 +46,7 @@ impl Any {
     #[inline]
     pub fn downcast_ref<T: Any>(&self) -> Option<&T> {
         if self.is::<T>() {
-            unsafe {
-                Some(&*(self as *const Any as *const T))
-            }
+            unsafe { Some(&*(self as *const dyn Any as *const T)) }
         } else {
             None
         }
@@ -56,23 +55,21 @@ impl Any {
     #[inline]
     pub fn downcast_mut<T: Any>(&mut self) -> Option<&mut T> {
         if self.is::<T>() {
-            unsafe {
-                Some(&mut *(self as *mut Any as *mut T))
-            }
+            unsafe { Some(&mut *(self as *mut dyn Any as *mut T)) }
         } else {
             None
         }
     }
 }
 
-impl Clone for Box<Any> {
+impl Clone for Box<dyn Any> {
     fn clone(&self) -> Self {
-        Any::box_clone(self.as_ref() as &Any)
+        Any::box_clone(self.as_ref() as &dyn Any)
     }
 }
 
-impl fmt::Debug for Any {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl fmt::Debug for dyn Any {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.pad("Any")
     }
 }
@@ -81,11 +78,11 @@ pub trait AnyExt: Sized {
     fn downcast<T: Any + Clone>(self) -> Result<Box<T>, Self>;
 }
 
-impl AnyExt for Box<Any> {
+impl AnyExt for Box<dyn Any> {
     fn downcast<T: Any + Clone>(self) -> Result<Box<T>, Self> {
         if self.is::<T>() {
             unsafe {
-                let raw: *mut Any = Box::into_raw(self);
+                let raw: *mut dyn Any = Box::into_raw(self);
                 Ok(Box::from_raw(raw as *mut T))
             }
         } else {

@@ -1,5 +1,3 @@
-extern crate rhai;
-
 use rhai::Engine;
 use rhai::RegisterFn;
 
@@ -32,5 +30,4 @@ fn test_method_call() {
     } else {
         assert!(false);
     }
-
 }

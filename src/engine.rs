@@ -1,16 +1,15 @@
 use std::any::TypeId;
-use std::borrow::Borrow;
 use std::cmp::{PartialEq, PartialOrd};
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
+use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Rem, Shl, Shr, Sub};
 use std::sync::Arc;
-use std::ops::{Add, BitAnd, BitOr, BitXor, Deref, Div, Mul, Neg, Rem, Shl, Shr, Sub};
 
-use any::{Any, AnyExt};
-use fn_register::{Mut, RegisterFn};
-use parser::{lex, parse, Expr, FnDef, Stmt};
-use call::FunArgs;
+use crate::any::{Any, AnyExt};
+use crate::call::FunArgs;
+use crate::fn_register::RegisterFn;
+use crate::parser::{lex, parse, Expr, FnDef, Stmt};
 
 #[derive(Debug)]
 pub enum EvalAltResult {
@@ -26,7 +25,7 @@ pub enum EvalAltResult {
     ErrorCantOpenScriptFile,
     InternalErrorMalformedDotExpression,
     LoopBreak,
-    Return(Box<Any>),
+    Return(Box<dyn Any>),
 }
 
 impl EvalAltResult {
@@ -35,7 +34,7 @@ impl EvalAltResult {
             EvalAltResult::ErrorVariableNotFound(ref s) => Some(s.as_str()),
             EvalAltResult::ErrorFunctionNotFound(ref s) => Some(s.as_str()),
             EvalAltResult::ErrorMismatchOutputType(ref s) => Some(s.as_str()),
-            _ => None
+            _ => None,
         }
     }
 }
@@ -89,13 +88,13 @@ impl Error for EvalAltResult {
         }
     }
 
-    fn cause(&self) -> Option<&Error> {
+    fn cause(&self) -> Option<&dyn Error> {
         None
     }
 }
 
 impl fmt::Display for EvalAltResult {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(s) = self.as_str() {
             write!(f, "{}: {}", self.description(), s)
         } else {
@@ -128,7 +127,7 @@ pub struct FnSpec {
 pub struct Engine {
     /// A hashmap containing all functions known to the engine
     pub fns: HashMap<FnSpec, Arc<FnIntExt>>,
-    pub type_names: HashMap<TypeId,String>,
+    pub type_names: HashMap<TypeId, String>,
 }
 
 pub enum FnIntExt {
@@ -136,7 +135,7 @@ pub enum FnIntExt {
     Int(FnDef),
 }
 
-pub type FnAny = Fn(Vec<&mut Any>) -> Result<Box<Any>, EvalAltResult>;
+pub type FnAny = dyn Fn(Vec<&mut dyn Any>) -> Result<Box<dyn Any>, EvalAltResult>;
 
 /// A type containing information about current scope.
 /// Useful for keeping state between `Engine` runs
@@ -152,7 +151,7 @@ pub type FnAny = Fn(Vec<&mut Any>) -> Result<Box<Any>, EvalAltResult>;
 /// ```
 ///
 /// Between runs, `Engine` only remembers functions when not using own `Scope`.
-pub type Scope = Vec<(String, Box<Any>)>;
+pub type Scope = Vec<(String, Box<dyn Any>)>;
 
 impl Engine {
     pub fn call_fn<'a, I, A, T>(&self, ident: I, args: A) -> Result<T, EvalAltResult>
@@ -174,8 +173,8 @@ impl Engine {
     pub fn call_fn_raw(
         &self,
         ident: String,
-        args: Vec<&mut Any>,
-    ) -> Result<Box<Any>, EvalAltResult> {
+        args: Vec<&mut dyn Any>,
+    ) -> Result<Box<dyn Any>, EvalAltResult> {
         debug_println!(
             "Trying to call function {:?} with args {:?}",
             ident,
@@ -184,17 +183,27 @@ impl Engine {
 
         let spec = FnSpec {
             ident: ident.clone(),
-            args: Some(args.iter().map(|a| <Any as Any>::type_id(&**a)).collect()),
+            args: Some(
+                args.iter()
+                    .map(|a| <dyn Any as Any>::type_id(&**a))
+                    .collect(),
+            ),
         };
 
         self.fns
             .get(&spec)
             .or_else(|| {
-                let spec1 = FnSpec { ident: ident.clone(), args: None };
+                let spec1 = FnSpec {
+                    ident: ident.clone(),
+                    args: None,
+                };
                 self.fns.get(&spec1)
             })
             .ok_or_else(|| {
-                let typenames = args.iter().map(|x| self.nice_type_name((&**x).box_clone())).collect::<Vec<_>>();
+                let typenames = args
+                    .iter()
+                    .map(|x| self.nice_type_name((&**x).box_clone()))
+                    .collect::<Vec<_>>();
                 EvalAltResult::ErrorFunctionNotFound(format!("{} ({})", ident, typenames.join(",")))
             })
             .and_then(move |f| match **f {
@@ -272,14 +281,15 @@ impl Engine {
     fn get_dot_val_helper(
         &self,
         scope: &mut Scope,
-        this_ptr: &mut Any,
+        this_ptr: &mut dyn Any,
         dot_rhs: &Expr,
-    ) -> Result<Box<Any>, EvalAltResult> {
+    ) -> Result<Box<dyn Any>, EvalAltResult> {
         use std::iter::once;
 
         match *dot_rhs {
             Expr::FnCall(ref fn_name, ref args) => {
-                let mut args: Vec<Box<Any>> = args.iter()
+                let mut args: Vec<Box<dyn Any>> = args
+                    .iter()
                     .map(|arg| self.eval_expr(scope, arg))
                     .collect::<Result<Vec<_>, _>>()?;
                 let args = once(this_ptr)
@@ -299,7 +309,7 @@ impl Engine {
 
                 let mut val = self.call_fn_raw(get_fn_name, vec![this_ptr])?;
 
-                ((*val).downcast_mut() as Option<&mut Vec<Box<Any>>>)
+                ((*val).downcast_mut() as Option<&mut Vec<Box<dyn Any>>>)
                     .and_then(|arr| idx.downcast_ref::<i64>().map(|idx| (arr, *idx as usize)))
                     .map(|(arr, idx)| arr[idx].clone())
                     .ok_or(EvalAltResult::ErrorIndexMismatch)
@@ -322,7 +332,7 @@ impl Engine {
         map: F,
     ) -> Result<(usize, T), EvalAltResult>
     where
-        F: FnOnce(&'a mut Any) -> Result<T, EvalAltResult>,
+        F: FnOnce(&'a mut dyn Any) -> Result<T, EvalAltResult>,
     {
         scope
             .iter_mut()
@@ -338,13 +348,14 @@ impl Engine {
         scope: &mut Scope,
         id: &str,
         idx: &Expr,
-    ) -> Result<(usize, usize, Box<Any>), EvalAltResult> {
-        let idx_boxed = self.eval_expr(scope, idx)?
+    ) -> Result<(usize, usize, Box<dyn Any>), EvalAltResult> {
+        let idx_boxed = self
+            .eval_expr(scope, idx)?
             .downcast::<i64>()
             .map_err(|_| EvalAltResult::ErrorIndexMismatch)?;
         let idx = *idx_boxed as usize;
         let (idx_sc, val) = Self::search_scope(scope, id, |val| {
-            ((*val).downcast_mut() as Option<&mut Vec<Box<Any>>>)
+            ((*val).downcast_mut() as Option<&mut Vec<Box<dyn Any>>>)
                 .map(|arr| arr[idx].clone())
                 .ok_or(EvalAltResult::ErrorIndexMismatch)
         })?;
@@ -357,7 +368,7 @@ impl Engine {
         scope: &mut Scope,
         dot_lhs: &Expr,
         dot_rhs: &Expr,
-    ) -> Result<Box<Any>, EvalAltResult> {
+    ) -> Result<Box<dyn Any>, EvalAltResult> {
         match *dot_lhs {
             Expr::Identifier(ref id) => {
                 let (sc_idx, mut target) = Self::search_scope(scope, id, |x| Ok(x.box_clone()))?;
@@ -375,7 +386,7 @@ impl Engine {
 
                 // In case the expression mutated `target`, we need to reassign it because
                 // of the above `clone`.
-                scope[sc_idx].1.downcast_mut::<Vec<Box<Any>>>().unwrap()[idx] = target;
+                scope[sc_idx].1.downcast_mut::<Vec<Box<dyn Any>>>().unwrap()[idx] = target;
 
                 value
             }
@@ -385,10 +396,10 @@ impl Engine {
 
     fn set_dot_val_helper(
         &self,
-        this_ptr: &mut Any,
+        this_ptr: &mut dyn Any,
         dot_rhs: &Expr,
-        mut source_val: Box<Any>,
-    ) -> Result<Box<Any>, EvalAltResult> {
+        mut source_val: Box<dyn Any>,
+    ) -> Result<Box<dyn Any>, EvalAltResult> {
         match *dot_rhs {
             Expr::Identifier(ref id) => {
                 let set_fn_name = "set$".to_string() + id;
@@ -419,8 +430,8 @@ impl Engine {
         scope: &mut Scope,
         dot_lhs: &Expr,
         dot_rhs: &Expr,
-        source_val: Box<Any>,
-    ) -> Result<Box<Any>, EvalAltResult> {
+        source_val: Box<dyn Any>,
+    ) -> Result<Box<dyn Any>, EvalAltResult> {
         match *dot_lhs {
             Expr::Identifier(ref id) => {
                 let (sc_idx, mut target) = Self::search_scope(scope, id, |x| Ok(x.box_clone()))?;
@@ -438,7 +449,7 @@ impl Engine {
 
                 // In case the expression mutated `target`, we need to reassign it because
                 // of the above `clone`.
-                scope[sc_idx].1.downcast_mut::<Vec<Box<Any>>>().unwrap()[idx] = target;
+                scope[sc_idx].1.downcast_mut::<Vec<Box<dyn Any>>>().unwrap()[idx] = target;
 
                 value
             }
@@ -446,7 +457,7 @@ impl Engine {
         }
     }
 
-    fn eval_expr(&self, scope: &mut Scope, expr: &Expr) -> Result<Box<Any>, EvalAltResult> {
+    fn eval_expr(&self, scope: &mut Scope, expr: &Expr) -> Result<Box<dyn Any>, EvalAltResult> {
         match *expr {
             Expr::IntConst(i) => Ok(Box::new(i)),
             Expr::FloatConst(i) => Ok(Box::new(i)),
@@ -484,7 +495,7 @@ impl Engine {
                             if *id == *name {
                                 if let Some(i) = idx.downcast_ref::<i64>() {
                                     if let Some(arr_typed) =
-                                        (*val).downcast_mut() as Option<&mut Vec<Box<Any>>>
+                                        (*val).downcast_mut() as Option<&mut Vec<Box<dyn Any>>>
                                     {
                                         arr_typed[*i as usize] = rhs_val;
                                         return Ok(Box::new(()));
@@ -520,7 +531,7 @@ impl Engine {
                 fn_name.to_owned(),
                 args.iter()
                     .map(|ex| self.eval_expr(scope, ex))
-                    .collect::<Result<Vec<Box<Any>>, _>>()?
+                    .collect::<Result<Vec<Box<dyn Any>>, _>>()?
                     .iter_mut()
                     .map(|b| b.as_mut())
                     .collect(),
@@ -531,12 +542,12 @@ impl Engine {
         }
     }
 
-    fn eval_stmt(&self, scope: &mut Scope, stmt: &Stmt) -> Result<Box<Any>, EvalAltResult> {
+    fn eval_stmt(&self, scope: &mut Scope, stmt: &Stmt) -> Result<Box<dyn Any>, EvalAltResult> {
         match *stmt {
             Stmt::Expr(ref e) => self.eval_expr(scope, e),
             Stmt::Block(ref b) => {
                 let prev_len = scope.len();
-                let mut last_result: Result<Box<Any>, EvalAltResult> = Ok(Box::new(()));
+                let mut last_result: Result<Box<dyn Any>, EvalAltResult> = Ok(Box::new(()));
 
                 for s in b.iter() {
                     last_result = self.eval_stmt(scope, s);
@@ -621,8 +632,8 @@ impl Engine {
         }
     }
 
-    fn nice_type_name(&self, b: Box<Any>) -> String {
-        let tid = <Any as Any>::type_id(&*b);
+    fn nice_type_name(&self, b: Box<dyn Any>) -> String {
+        let tid = <dyn Any as Any>::type_id(&*b);
         if let Some(name) = self.type_names.get(&tid) {
             name.to_string()
         } else {
@@ -650,7 +661,7 @@ impl Engine {
 
     /// Evaluate a string
     pub fn eval<T: Any + Clone>(&mut self, input: &str) -> Result<T, EvalAltResult> {
-        let mut scope: Scope = Vec::new();
+        let mut scope = Scope::new();
 
         self.eval_with_scope(&mut scope, input)
     }
@@ -668,7 +679,7 @@ impl Engine {
 
         match tree {
             Ok((ref os, ref fns)) => {
-                let mut x: Result<Box<Any>, EvalAltResult> = Ok(Box::new(()));
+                let mut x: Result<Box<dyn Any>, EvalAltResult> = Ok(Box::new(()));
 
                 for f in fns {
                     let name = f.name.clone();
@@ -693,7 +704,9 @@ impl Engine {
 
                 match x.downcast::<T>() {
                     Ok(out) => Ok(*out),
-                    Err(a) => Err(EvalAltResult::ErrorMismatchOutputType(self.nice_type_name(a))),
+                    Err(a) => Err(EvalAltResult::ErrorMismatchOutputType(
+                        self.nice_type_name(a),
+                    )),
                 }
             }
             Err(_) => Err(EvalAltResult::ErrorFunctionArgMismatch),
@@ -786,12 +799,12 @@ impl Engine {
         engine.register_type_name::<String>("string");
         engine.register_type_name::<char>("char");
         engine.register_type_name::<bool>("boolean");
-        engine.register_type_name::<Vec<Box<Any>>>("array");
+        engine.register_type_name::<Vec<Box<dyn Any>>>("array");
 
         macro_rules! reg_op {
             ($engine:expr, $x:expr, $op:expr, $( $y:ty ),*) => (
                 $(
-                    $engine.register_fn($x, ($op as fn(x: $y, y: $y)->$y));
+                    $engine.register_fn($x, $op as fn(x: $y, y: $y)->$y);
                 )*
             )
         }
@@ -799,7 +812,7 @@ impl Engine {
         macro_rules! reg_un {
             ($engine:expr, $x:expr, $op:expr, $( $y:ty ),*) => (
                 $(
-                    $engine.register_fn($x, ($op as fn(x: $y)->$y));
+                    $engine.register_fn($x, $op as fn(x: $y)->$y);
                 )*
             )
         }
@@ -807,36 +820,86 @@ impl Engine {
         macro_rules! reg_cmp {
             ($engine:expr, $x:expr, $op:expr, $( $y:ty ),*) => (
                 $(
-                    $engine.register_fn($x, ($op as fn(x: $y, y: $y)->bool));
+                    $engine.register_fn($x, $op as fn(x: $y, y: $y)->bool);
                 )*
             )
         }
 
-        fn add<T: Add>(x: T, y: T) -> <T as Add>::Output { x + y }
-        fn sub<T: Sub>(x: T, y: T) -> <T as Sub>::Output { x - y }
-        fn mul<T: Mul>(x: T, y: T) -> <T as Mul>::Output { x * y }
-        fn div<T: Div>(x: T, y: T) -> <T as Div>::Output { x / y }
-        fn neg<T: Neg>(x: T) -> <T as Neg>::Output       { -x }
-        fn lt<T: PartialOrd>(x: T, y: T) -> bool  { x < y  }
-        fn lte<T: PartialOrd>(x: T, y: T) -> bool { x <= y }
-        fn gt<T: PartialOrd>(x: T, y: T) -> bool  { x > y  }
-        fn gte<T: PartialOrd>(x: T, y: T) -> bool { x >= y }
-        fn eq<T: PartialEq>(x: T, y: T) -> bool   { x == y }
-        fn ne<T: PartialEq>(x: T, y: T) -> bool   { x != y }
-        fn and(x: bool, y: bool) -> bool { x && y }
-        fn or(x: bool, y: bool) -> bool  { x || y }
-        fn not(x: bool) -> bool { !x }
-        fn concat(x: String, y: String) -> String { x + &y }
-        fn binary_and<T: BitAnd>(x: T, y: T) -> <T as BitAnd>::Output  { x & y }
-        fn binary_or<T: BitOr>(x: T, y: T) -> <T as BitOr>::Output     { x | y }
-        fn binary_xor<T: BitXor>(x: T, y: T) -> <T as BitXor>::Output  { x ^ y }
-        fn left_shift<T: Shl<T>>(x: T, y: T) -> <T as Shl<T>>::Output  { x.shl(y) }
-        fn right_shift<T: Shr<T>>(x: T, y: T) -> <T as Shr<T>>::Output { x.shr(y) }
-        fn modulo<T: Rem<T>>(x: T, y: T) -> <T as Rem<T>>::Output { x % y }
-        fn pow_i64_i64(x: i64, y: i64) -> i64 { x.pow(y as u32) }
-        fn pow_f64_f64(x: f64, y: f64) -> f64 { x.powf(y) }
-        fn pow_f64_i64(x: f64, y: i64) -> f64 { x.powi(y as i32) }
-        fn unit_eq(a: (), b: ()) -> bool { true }
+        fn add<T: Add>(x: T, y: T) -> <T as Add>::Output {
+            x + y
+        }
+        fn sub<T: Sub>(x: T, y: T) -> <T as Sub>::Output {
+            x - y
+        }
+        fn mul<T: Mul>(x: T, y: T) -> <T as Mul>::Output {
+            x * y
+        }
+        fn div<T: Div>(x: T, y: T) -> <T as Div>::Output {
+            x / y
+        }
+        fn neg<T: Neg>(x: T) -> <T as Neg>::Output {
+            -x
+        }
+        fn lt<T: PartialOrd>(x: T, y: T) -> bool {
+            x < y
+        }
+        fn lte<T: PartialOrd>(x: T, y: T) -> bool {
+            x <= y
+        }
+        fn gt<T: PartialOrd>(x: T, y: T) -> bool {
+            x > y
+        }
+        fn gte<T: PartialOrd>(x: T, y: T) -> bool {
+            x >= y
+        }
+        fn eq<T: PartialEq>(x: T, y: T) -> bool {
+            x == y
+        }
+        fn ne<T: PartialEq>(x: T, y: T) -> bool {
+            x != y
+        }
+        fn and(x: bool, y: bool) -> bool {
+            x && y
+        }
+        fn or(x: bool, y: bool) -> bool {
+            x || y
+        }
+        fn not(x: bool) -> bool {
+            !x
+        }
+        fn concat(x: String, y: String) -> String {
+            x + &y
+        }
+        fn binary_and<T: BitAnd>(x: T, y: T) -> <T as BitAnd>::Output {
+            x & y
+        }
+        fn binary_or<T: BitOr>(x: T, y: T) -> <T as BitOr>::Output {
+            x | y
+        }
+        fn binary_xor<T: BitXor>(x: T, y: T) -> <T as BitXor>::Output {
+            x ^ y
+        }
+        fn left_shift<T: Shl<T>>(x: T, y: T) -> <T as Shl<T>>::Output {
+            x.shl(y)
+        }
+        fn right_shift<T: Shr<T>>(x: T, y: T) -> <T as Shr<T>>::Output {
+            x.shr(y)
+        }
+        fn modulo<T: Rem<T>>(x: T, y: T) -> <T as Rem<T>>::Output {
+            x % y
+        }
+        fn pow_i64_i64(x: i64, y: i64) -> i64 {
+            x.pow(y as u32)
+        }
+        fn pow_f64_f64(x: f64, y: f64) -> f64 {
+            x.powf(y)
+        }
+        fn pow_f64_i64(x: f64, y: i64) -> f64 {
+            x.powi(y as i32)
+        }
+        fn unit_eq(_a: (), _b: ()) -> bool {
+            true
+        }
 
         reg_op!(engine, "+", add, i32, i64, u32, u64, f32, f64);
         reg_op!(engine, "-", sub, i32, i64, u32, u64, f32, f64);
@@ -874,7 +937,6 @@ impl Engine {
         // FIXME?  Registering array lookups are a special case because we want to return boxes
         // directly let ent = engine.fns.entry("[]".to_string()).or_insert_with(Vec::new);
         // (*ent).push(FnType::ExternalFn2(Box::new(idx)));
-
     }
 
     /// Make a new engine

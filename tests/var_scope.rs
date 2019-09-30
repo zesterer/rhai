@@ -1,11 +1,9 @@
-extern crate rhai;
-
 use rhai::{Engine, Scope};
 
 #[test]
 fn test_var_scope() {
     let mut engine = Engine::new();
-    let mut scope: Scope = Vec::new();
+    let mut scope = Scope::new();
 
     if let Ok(_) = engine.eval_with_scope::<()>(&mut scope, "let x = 4 + 5") {
     } else {

@@ -1,5 +1,3 @@
-extern crate rhai;
-
 use rhai::Engine;
 use rhai::RegisterFn;
 
