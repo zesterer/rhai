@@ -687,9 +687,7 @@ impl Engine {
 
                 match x.downcast::<T>() {
                     Ok(out) => Ok(*out),
-                    Err(a) => Err(EvalAltResult::ErrorMismatchOutputType(
-                        (*a).type_name(),
-                    )),
+                    Err(a) => Err(EvalAltResult::ErrorMismatchOutputType((*a).type_name())),
                 }
             }
             Err(_) => Err(EvalAltResult::ErrorFunctionArgMismatch),
@@ -913,7 +911,7 @@ impl Engine {
     /// Make a new engine
     pub fn new() -> Engine {
         let mut engine = Engine {
-            fns: HashMap::new()
+            fns: HashMap::new(),
         };
 
         Engine::register_default_lib(&mut engine);
