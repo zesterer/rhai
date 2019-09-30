@@ -127,7 +127,6 @@ pub struct FnSpec {
 pub struct Engine {
     /// A hashmap containing all functions known to the engine
     pub fns: HashMap<FnSpec, Arc<FnIntExt>>,
-    pub type_names: HashMap<TypeId, String>,
 }
 
 pub enum FnIntExt {
@@ -164,7 +163,7 @@ impl Engine {
             .and_then(|b| {
                 b.downcast()
                     .map(|b| *b)
-                    .map_err(|a| EvalAltResult::ErrorMismatchOutputType(self.nice_type_name(a)))
+                    .map_err(|a| EvalAltResult::ErrorMismatchOutputType((*a).type_name()))
             })
     }
 
@@ -202,7 +201,7 @@ impl Engine {
             .ok_or_else(|| {
                 let typenames = args
                     .iter()
-                    .map(|x| self.nice_type_name((&**x).box_clone()))
+                    .map(|x| (*(&**x).box_clone()).type_name())
                     .collect::<Vec<_>>();
                 EvalAltResult::ErrorFunctionNotFound(format!("{} ({})", ident, typenames.join(",")))
             })
@@ -237,13 +236,6 @@ impl Engine {
     /// your type must implement Clone.
     pub fn register_type<T: Any>(&mut self) {
         // currently a no-op, exists for future extensibility
-    }
-
-    /// Register a type, providing a name for nice error messages.
-    pub fn register_type_name<T: Any>(&mut self, name: &str) {
-        self.register_type::<T>();
-        debug_println!("register type {}: {:?}", name, TypeId::of::<T>());
-        self.type_names.insert(TypeId::of::<T>(), name.into());
     }
 
     /// Register a get function for a member of a registered type
@@ -632,15 +624,6 @@ impl Engine {
         }
     }
 
-    fn nice_type_name(&self, b: Box<dyn Any>) -> String {
-        let tid = <dyn Any as Any>::type_id(&*b);
-        if let Some(name) = self.type_names.get(&tid) {
-            name.to_string()
-        } else {
-            format!("<unknown> {:?}", b.type_id())
-        }
-    }
-
     /// Evaluate a file
     pub fn eval_file<T: Any + Clone>(&mut self, fname: &str) -> Result<T, EvalAltResult> {
         use std::fs::File;
@@ -705,7 +688,7 @@ impl Engine {
                 match x.downcast::<T>() {
                     Ok(out) => Ok(*out),
                     Err(a) => Err(EvalAltResult::ErrorMismatchOutputType(
-                        self.nice_type_name(a),
+                        (*a).type_name(),
                     )),
                 }
             }
@@ -789,18 +772,6 @@ impl Engine {
     /// Register the default library. That means, numberic types, char, bool
     /// String, arithmetics and string concatenations.
     pub fn register_default_lib(engine: &mut Engine) {
-        engine.register_type_name::<i32>("i32");
-        engine.register_type_name::<u32>("u32");
-        engine.register_type_name::<i64>("integer");
-        engine.register_type_name::<u64>("u64");
-        engine.register_type_name::<usize>("usize");
-        engine.register_type_name::<f32>("f32");
-        engine.register_type_name::<f64>("float");
-        engine.register_type_name::<String>("string");
-        engine.register_type_name::<char>("char");
-        engine.register_type_name::<bool>("boolean");
-        engine.register_type_name::<Vec<Box<dyn Any>>>("array");
-
         macro_rules! reg_op {
             ($engine:expr, $x:expr, $op:expr, $( $y:ty ),*) => (
                 $(
@@ -942,8 +913,7 @@ impl Engine {
     /// Make a new engine
     pub fn new() -> Engine {
         let mut engine = Engine {
-            fns: HashMap::new(),
-            type_names: HashMap::new(),
+            fns: HashMap::new()
         };
 
         Engine::register_default_lib(&mut engine);
