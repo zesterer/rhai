@@ -1,8 +1,10 @@
-use std::any::{Any as StdAny, TypeId};
+use std::any::{type_name, Any as StdAny, TypeId};
 use std::fmt;
 
 pub trait Any: StdAny {
     fn type_id(&self) -> TypeId;
+
+    fn type_name(&self) -> String;
 
     fn box_clone(&self) -> Box<dyn Any>;
 
@@ -18,6 +20,10 @@ where
     #[inline]
     fn type_id(&self) -> TypeId {
         TypeId::of::<T>()
+    }
+
+    fn type_name(&self) -> String {
+        type_name::<T>().to_string()
     }
 
     #[inline]
