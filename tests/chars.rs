@@ -4,17 +4,8 @@ use rhai::Engine;
 fn test_chars() {
     let mut engine = Engine::new();
 
-    if let Ok(result) = engine.eval::<char>("'y'") {
-        assert_eq!(result, 'y');
-    } else {
-        assert!(false);
-    }
-
-    if let Ok(result) = engine.eval::<char>("'\\u2764'") {
-        assert_eq!(result, '❤');
-    } else {
-        assert!(false);
-    }
+    assert_eq!(engine.eval::<char>("'y'"), Ok('y'));
+    assert_eq!(engine.eval::<char>("'\\u2764'"), Ok('❤'));
 
     match engine.eval::<char>("''") {
         Err(_) => (),

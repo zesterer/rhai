@@ -29,11 +29,10 @@ fn test_get_set() {
     engine.register_get_set("x", TestStruct::get_x, TestStruct::set_x);
     engine.register_fn("new_ts", TestStruct::new);
 
-    if let Ok(result) = engine.eval::<i64>("let a = new_ts(); a.x = 500; a.x") {
-        assert_eq!(result, 500);
-    } else {
-        assert!(false);
-    }
+    assert_eq!(
+        engine.eval::<i64>("let a = new_ts(); a.x = 500; a.x"),
+        Ok(500)
+    );
 }
 
 #[test]

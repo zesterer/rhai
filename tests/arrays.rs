@@ -5,17 +5,11 @@ use rhai::RegisterFn;
 fn test_arrays() {
     let mut engine = Engine::new();
 
-    if let Ok(result) = engine.eval::<i64>("let x = [1, 2, 3]; x[1]") {
-        assert_eq!(result, 2);
-    } else {
-        assert!(false);
-    }
-
-    if let Ok(result) = engine.eval::<i64>("let y = [1, 2, 3]; y[1] = 5; y[1]") {
-        assert_eq!(result, 5);
-    } else {
-        assert!(false);
-    }
+    assert_eq!(engine.eval::<i64>("let x = [1, 2, 3]; x[1]"), Ok(2));
+    assert_eq!(
+        engine.eval::<i64>("let y = [1, 2, 3]; y[1] = 5; y[1]"),
+        Ok(5)
+    );
 }
 
 #[test]
@@ -51,18 +45,15 @@ fn test_array_with_structs() {
     engine.register_fn("update", TestStruct::update);
     engine.register_fn("new_ts", TestStruct::new);
 
-    if let Ok(result) = engine.eval::<i64>("let a = [new_ts()]; a[0].x") {
-        assert_eq!(result, 1);
-    } else {
-        assert!(false);
-    }
+    assert_eq!(engine.eval::<i64>("let a = [new_ts()]; a[0].x"), Ok(1));
 
-    if let Ok(result) = engine.eval::<i64>(
-        "let a = [new_ts()]; a[0].x = 100; a[0].update(); \
-         a[0].x",
-    ) {
-        assert_eq!(result, 1100);
-    } else {
-        assert!(false);
-    }
+    assert_eq!(
+        engine.eval::<i64>(
+            "let a = [new_ts()];     \
+             a[0].x = 100;           \
+             a[0].update();          \
+             a[0].x",
+        ),
+        Ok(1100)
+    );
 }
