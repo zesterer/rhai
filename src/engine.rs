@@ -15,11 +15,9 @@ use crate::parser::{lex, parse, Expr, FnDef, Stmt};
 pub enum EvalAltResult {
     ErrorFunctionNotFound(String),
     ErrorFunctionArgMismatch,
-    ErrorFunctionCallNotSupported,
     ErrorIndexMismatch,
     ErrorIfGuardMismatch,
     ErrorVariableNotFound(String),
-    ErrorFunctionArityNotSupported,
     ErrorAssignmentToUnknownLHS,
     ErrorMismatchOutputType(String),
     ErrorCantOpenScriptFile,
@@ -46,11 +44,9 @@ impl PartialEq for EvalAltResult {
         match (self, other) {
             (&ErrorFunctionNotFound(ref a), &ErrorFunctionNotFound(ref b)) => a == b,
             (&ErrorFunctionArgMismatch, &ErrorFunctionArgMismatch) => true,
-            (&ErrorFunctionCallNotSupported, &ErrorFunctionCallNotSupported) => true,
             (&ErrorIndexMismatch, &ErrorIndexMismatch) => true,
             (&ErrorIfGuardMismatch, &ErrorIfGuardMismatch) => true,
             (&ErrorVariableNotFound(ref a), &ErrorVariableNotFound(ref b)) => a == b,
-            (&ErrorFunctionArityNotSupported, &ErrorFunctionArityNotSupported) => true,
             (&ErrorAssignmentToUnknownLHS, &ErrorAssignmentToUnknownLHS) => true,
             (&ErrorMismatchOutputType(ref a), &ErrorMismatchOutputType(ref b)) => a == b,
             (&ErrorCantOpenScriptFile, &ErrorCantOpenScriptFile) => true,
@@ -66,15 +62,9 @@ impl Error for EvalAltResult {
         match *self {
             EvalAltResult::ErrorFunctionNotFound(_) => "Function not found",
             EvalAltResult::ErrorFunctionArgMismatch => "Function argument types do not match",
-            EvalAltResult::ErrorFunctionCallNotSupported => {
-                "Function call with > 2 argument not supported"
-            }
             EvalAltResult::ErrorIndexMismatch => "Index does not match array",
             EvalAltResult::ErrorIfGuardMismatch => "If guards expect boolean expression",
             EvalAltResult::ErrorVariableNotFound(_) => "Variable not found",
-            EvalAltResult::ErrorFunctionArityNotSupported => {
-                "Functions of more than 3 parameters are not yet supported"
-            }
             EvalAltResult::ErrorAssignmentToUnknownLHS => {
                 "Assignment to an unsupported left-hand side"
             }

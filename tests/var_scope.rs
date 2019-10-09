@@ -5,36 +5,24 @@ fn test_var_scope() {
     let mut engine = Engine::new();
     let mut scope = Scope::new();
 
-    if let Ok(_) = engine.eval_with_scope::<()>(&mut scope, "let x = 4 + 5") {
-    } else {
-        assert!(false);
-    }
+    assert_eq!(
+        engine.eval_with_scope::<()>(&mut scope, "let x = 4 + 5"),
+        Ok(())
+    );
 
-    if let Ok(result) = engine.eval_with_scope::<i64>(&mut scope, "x") {
-        assert_eq!(result, 9);
-    } else {
-        assert!(false);
-    }
+    assert_eq!(engine.eval_with_scope::<i64>(&mut scope, "x"), Ok(9));
 
-    if let Ok(_) = engine.eval_with_scope::<()>(&mut scope, "x = x + 1; x = x + 2;") {
-    } else {
-        assert!(false);
-    }
+    assert_eq!(
+        engine.eval_with_scope::<()>(&mut scope, "x = x + 1; x = x + 2;"),
+        Ok(())
+    );
 
-    if let Ok(result) = engine.eval_with_scope::<i64>(&mut scope, "x") {
-        assert_eq!(result, 12);
-    } else {
-        assert!(false);
-    }
+    assert_eq!(engine.eval_with_scope::<i64>(&mut scope, "x"), Ok(12));
 
-    if let Ok(_) = engine.eval_with_scope::<()>(&mut scope, "{let x = 3}") {
-    } else {
-        assert!(false);
-    }
+    assert_eq!(
+        engine.eval_with_scope::<()>(&mut scope, "{let x = 3}"),
+        Ok(())
+    );
 
-    if let Ok(result) = engine.eval_with_scope::<i64>(&mut scope, "x") {
-        assert_eq!(result, 12);
-    } else {
-        assert!(false);
-    }
+    assert_eq!(engine.eval_with_scope::<i64>(&mut scope, "x"), Ok(12));
 }

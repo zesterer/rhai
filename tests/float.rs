@@ -5,23 +5,15 @@ use rhai::RegisterFn;
 fn test_float() {
     let mut engine = Engine::new();
 
-    if let Ok(result) = engine.eval::<bool>("let x = 0.0; let y = 1.0; x < y") {
-        assert!(result);
-    } else {
-        assert!(false);
-    }
-
-    if let Ok(result) = engine.eval::<bool>("let x = 0.0; let y = 1.0; x > y") {
-        assert!(!result);
-    } else {
-        assert!(false);
-    }
-
-    if let Ok(result) = engine.eval::<f64>("let x = 9.9999; x") {
-        assert_eq!(result, 9.9999);
-    } else {
-        assert!(false);
-    }
+    assert_eq!(
+        engine.eval::<bool>("let x = 0.0; let y = 1.0; x < y"),
+        Ok(true)
+    );
+    assert_eq!(
+        engine.eval::<bool>("let x = 0.0; let y = 1.0; x > y"),
+        Ok(false)
+    );
+    assert_eq!(engine.eval::<f64>("let x = 9.9999; x"), Ok(9.9999));
 }
 
 #[test]
@@ -57,15 +49,12 @@ fn struct_with_float() {
     engine.register_fn("update", TestStruct::update);
     engine.register_fn("new_ts", TestStruct::new);
 
-    if let Ok(result) = engine.eval::<f64>("let ts = new_ts(); ts.update(); ts.x") {
-        assert_eq!(result, 6.789);
-    } else {
-        assert!(false);
-    }
-
-    if let Ok(result) = engine.eval::<f64>("let ts = new_ts(); ts.x = 10.1001; ts.x") {
-        assert_eq!(result, 10.1001);
-    } else {
-        assert!(false);
-    }
+    assert_eq!(
+        engine.eval::<f64>("let ts = new_ts(); ts.update(); ts.x"),
+        Ok(6.789)
+    );
+    assert_eq!(
+        engine.eval::<f64>("let ts = new_ts(); ts.x = 10.1001; ts.x"),
+        Ok(10.1001)
+    );
 }
