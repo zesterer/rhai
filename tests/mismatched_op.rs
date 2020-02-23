@@ -6,8 +6,8 @@ fn test_mismatched_op() {
 
     assert_eq!(
         engine.eval::<i64>("60 + \"hello\""),
-        Err(EvalAltResult::ErrorFunctionNotFound(
-            "+ (i64,alloc::string::String)".into()
+        Err(EvalAltResult::ErrorMismatchOutputType(
+            "alloc::string::String".into()
         ))
     );
 }
