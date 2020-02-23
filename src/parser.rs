@@ -89,6 +89,7 @@ pub enum Stmt {
     IfElse(Box<Expr>, Box<Stmt>, Box<Stmt>),
     While(Box<Expr>, Box<Stmt>),
     Loop(Box<Stmt>),
+    For(String, Box<Expr>, Box<Stmt>),
     Var(String, Option<Box<Expr>>),
     Block(Vec<Stmt>),
     Expr(Box<Expr>),
@@ -175,6 +176,8 @@ pub enum Token {
     ModuloAssign,
     PowerOf,
     PowerOfAssign,
+    For,
+    In,
     LexErr(LexError),
 }
 
@@ -230,6 +233,7 @@ impl Token {
             ModuloAssign     |
             Return           |
             PowerOf          |
+            In               |
             PowerOfAssign => true,
             _ => false,
         }
@@ -505,6 +509,8 @@ impl<'a> TokenIterator<'a> {
                         "break" => return Some(Token::Break),
                         "return" => return Some(Token::Return),
                         "fn" => return Some(Token::Fn),
+                        "for" => return Some(Token::For),
+                        "in" => return Some(Token::In),
                         x => return Some(Token::Identifier(x.to_string())),
                     }
                 }
@@ -1102,6 +1108,26 @@ fn parse_loop<'a>(input: &mut Peekable<TokenIterator<'a>>) -> Result<Stmt, Parse
     Ok(Stmt::Loop(Box::new(body)))
 }
 
+fn parse_for<'a>(input: &mut Peekable<TokenIterator<'a>>) -> Result<Stmt, ParseError> {
+    input.next();
+
+    let name = match input.next() {
+        Some(Token::Identifier(ref s)) => s.clone(),
+        _ => return Err(ParseError::VarExpectsIdentifier),
+    };
+
+    match input.next() {
+        Some(Token::In) => {}
+        _ => return Err(ParseError::VarExpectsIdentifier),
+    }
+
+    let expr = parse_expr(input)?;
+
+    let body = parse_block(input)?;
+
+    Ok(Stmt::For(name, Box::new(expr), Box::new(body)))
+}
+
 fn parse_var<'a>(input: &mut Peekable<TokenIterator<'a>>) -> Result<Stmt, ParseError> {
     input.next();
 
@@ -1168,6 +1194,7 @@ fn parse_stmt<'a>(input: &mut Peekable<TokenIterator<'a>>) -> Result<Stmt, Parse
         Some(&Token::If) => parse_if(input),
         Some(&Token::While) => parse_while(input),
         Some(&Token::Loop) => parse_loop(input),
+        Some(&Token::For) => parse_for(input),
         Some(&Token::Break) => {
             input.next();
             Ok(Stmt::Break)
