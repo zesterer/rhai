@@ -513,8 +513,14 @@ impl Engine {
                                     if let Some(arr_typed) =
                                         (*val).downcast_mut() as Option<&mut Vec<Box<dyn Any>>>
                                     {
-                                        arr_typed[i as usize] = rhs_val;
-                                        return Ok(Box::new(()));
+                                        return if i < 0 {
+                                            Err(EvalAltResult::ErrorArrayOutOfBounds(0, i))
+                                        } else if i as usize >= arr_typed.len() {
+                                            Err(EvalAltResult::ErrorArrayOutOfBounds(arr_typed.len(), i))
+                                        } else {
+                                            arr_typed[i as usize] = rhs_val;
+                                            Ok(Box::new(()))
+                                        };
                                     } else {
                                         return Err(EvalAltResult::ErrorIndexMismatch);
                                     }
