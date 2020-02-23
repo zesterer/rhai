@@ -15,6 +15,7 @@ use crate::parser::{lex, parse, Expr, FnDef, Stmt};
 pub enum EvalAltResult {
     ErrorFunctionNotFound(String),
     ErrorFunctionArgMismatch,
+    ErrorArrayOutOfBounds(usize, i64),
     ErrorIndexMismatch,
     ErrorIfGuardMismatch,
     ErrorVariableNotFound(String),
@@ -45,6 +46,9 @@ impl PartialEq for EvalAltResult {
             (&ErrorFunctionNotFound(ref a), &ErrorFunctionNotFound(ref b)) => a == b,
             (&ErrorFunctionArgMismatch, &ErrorFunctionArgMismatch) => true,
             (&ErrorIndexMismatch, &ErrorIndexMismatch) => true,
+            (&ErrorArrayOutOfBounds(max1, index1), &ErrorArrayOutOfBounds(max2, index2)) => {
+                max1 == max2 && index1 == index2
+            }
             (&ErrorIfGuardMismatch, &ErrorIfGuardMismatch) => true,
             (&ErrorVariableNotFound(ref a), &ErrorVariableNotFound(ref b)) => a == b,
             (&ErrorAssignmentToUnknownLHS, &ErrorAssignmentToUnknownLHS) => true,
@@ -62,7 +66,12 @@ impl Error for EvalAltResult {
         match *self {
             EvalAltResult::ErrorFunctionNotFound(_) => "Function not found",
             EvalAltResult::ErrorFunctionArgMismatch => "Function argument types do not match",
-            EvalAltResult::ErrorIndexMismatch => "Index does not match array",
+            EvalAltResult::ErrorIndexMismatch => "Array access expects integer index",
+            EvalAltResult::ErrorArrayOutOfBounds(_, index) if index < 0 => {
+                "Array access expects non-negative index"
+            }
+            EvalAltResult::ErrorArrayOutOfBounds(max, _) if max == 0 => "Access of empty array",
+            EvalAltResult::ErrorArrayOutOfBounds(_, _) => "Array index out of bounds",
             EvalAltResult::ErrorIfGuardMismatch => "If guards expect boolean expression",
             EvalAltResult::ErrorVariableNotFound(_) => "Variable not found",
             EvalAltResult::ErrorAssignmentToUnknownLHS => {
@@ -88,7 +97,18 @@ impl fmt::Display for EvalAltResult {
         if let Some(s) = self.as_str() {
             write!(f, "{}: {}", self.description(), s)
         } else {
-            write!(f, "{}", self.description())
+            match self {
+                EvalAltResult::ErrorArrayOutOfBounds(_, index) if *index < 0 => {
+                    write!(f, "{}: {} < 0", self.description(), index)
+                }
+                EvalAltResult::ErrorArrayOutOfBounds(max, _) if *max == 0 => {
+                    write!(f, "{}", self.description())
+                }
+                EvalAltResult::ErrorArrayOutOfBounds(max, index) => {
+                    write!(f, "{} (max {}): {}", self.description(), max - 1, index)
+                }
+                _ => write!(f, "{}", self.description()),
+            }
         }
     }
 }
@@ -292,9 +312,15 @@ impl Engine {
                 let mut val = self.call_fn_raw(get_fn_name, vec![this_ptr])?;
 
                 ((*val).downcast_mut() as Option<&mut Vec<Box<dyn Any>>>)
-                    .and_then(|arr| idx.downcast_ref::<i64>().map(|idx| (arr, *idx as usize)))
-                    .map(|(arr, idx)| arr[idx].clone())
+                    .and_then(|arr| idx.downcast_ref::<i64>().map(|idx| (arr, *idx)))
                     .ok_or(EvalAltResult::ErrorIndexMismatch)
+                    .and_then(|(arr, idx)| match idx {
+                        x if x < 0 => Err(EvalAltResult::ErrorArrayOutOfBounds(0, x)),
+                        x => arr
+                            .get(x as usize)
+                            .cloned()
+                            .ok_or(EvalAltResult::ErrorArrayOutOfBounds(arr.len(), x)),
+                    })
             }
             Expr::Dot(ref inner_lhs, ref inner_rhs) => match **inner_lhs {
                 Expr::Identifier(ref id) => {
@@ -335,11 +361,19 @@ impl Engine {
             .eval_expr(scope, idx)?
             .downcast::<i64>()
             .map_err(|_| EvalAltResult::ErrorIndexMismatch)?;
-        let idx = *idx_boxed as usize;
+        let idx_raw = *idx_boxed;
+        let idx = match idx_raw {
+            x if x < 0 => return Err(EvalAltResult::ErrorArrayOutOfBounds(0, x)),
+            x => x as usize,
+        };
         let (idx_sc, val) = Self::search_scope(scope, id, |val| {
             ((*val).downcast_mut() as Option<&mut Vec<Box<dyn Any>>>)
-                .map(|arr| arr[idx].clone())
                 .ok_or(EvalAltResult::ErrorIndexMismatch)
+                .and_then(|arr| {
+                    arr.get(idx)
+                        .cloned()
+                        .ok_or(EvalAltResult::ErrorArrayOutOfBounds(arr.len(), idx_raw))
+                })
         })?;
 
         Ok((idx_sc, idx, val))
@@ -475,11 +509,11 @@ impl Engine {
 
                         for &mut (ref name, ref mut val) in &mut scope.iter_mut().rev() {
                             if *id == *name {
-                                if let Some(i) = idx.downcast_ref::<i64>() {
+                                if let Some(&i) = idx.downcast_ref::<i64>() {
                                     if let Some(arr_typed) =
                                         (*val).downcast_mut() as Option<&mut Vec<Box<dyn Any>>>
                                     {
-                                        arr_typed[*i as usize] = rhs_val;
+                                        arr_typed[i as usize] = rhs_val;
                                         return Ok(Box::new(()));
                                     } else {
                                         return Err(EvalAltResult::ErrorIndexMismatch);
