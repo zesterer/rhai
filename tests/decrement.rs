@@ -10,7 +10,7 @@ fn test_decrement() {
     assert_eq!(
         engine.eval::<String>("let s = \"test\"; s -= \"ing\"; s"),
         Err(EvalAltResult::ErrorFunctionNotFound(
-            "- (alloc::string::String,alloc::string::String)".to_string()
+            "- (alloc::string::String, alloc::string::String)".to_string()
         ))
     );
 }

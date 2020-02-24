@@ -76,7 +76,7 @@ impl Clone for Box<dyn Any> {
 
 impl fmt::Debug for dyn Any {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.pad("Any")
+        f.pad("?")
     }
 }
 

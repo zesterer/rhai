@@ -4,36 +4,44 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
 use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Rem, Shl, Shr, Sub};
-use std::sync::Arc;
+use std::{convert::TryInto, sync::Arc};
 
 use crate::any::{Any, AnyExt};
 use crate::call::FunArgs;
-use crate::fn_register::RegisterFn;
-use crate::parser::{lex, parse, Expr, FnDef, Stmt};
+use crate::fn_register::{RegisterBoxFn, RegisterFn};
+use crate::parser::{lex, parse, Expr, FnDef, ParseError, Stmt, AST};
+use fmt::{Debug, Display};
 
-#[derive(Debug)]
+type Array = Vec<Box<dyn Any>>;
+
+#[derive(Debug, Clone)]
 pub enum EvalAltResult {
+    ErrorParseError(ParseError),
     ErrorFunctionNotFound(String),
     ErrorFunctionArgMismatch,
+    ErrorArrayOutOfBounds(usize, i64),
+    ErrorArrayMismatch,
     ErrorIndexMismatch,
     ErrorIfGuardMismatch,
+    ErrorForMismatch,
     ErrorVariableNotFound(String),
     ErrorAssignmentToUnknownLHS,
     ErrorMismatchOutputType(String),
-    ErrorCantOpenScriptFile,
-    InternalErrorMalformedDotExpression,
+    ErrorCantOpenScriptFile(String),
+    ErrorMalformedDotExpression,
     LoopBreak,
     Return(Box<dyn Any>),
 }
 
 impl EvalAltResult {
     fn as_str(&self) -> Option<&str> {
-        match *self {
-            EvalAltResult::ErrorVariableNotFound(ref s) => Some(s.as_str()),
-            EvalAltResult::ErrorFunctionNotFound(ref s) => Some(s.as_str()),
-            EvalAltResult::ErrorMismatchOutputType(ref s) => Some(s.as_str()),
-            _ => None,
-        }
+        Some(match *self {
+            EvalAltResult::ErrorCantOpenScriptFile(ref s)
+            | EvalAltResult::ErrorVariableNotFound(ref s)
+            | EvalAltResult::ErrorFunctionNotFound(ref s)
+            | EvalAltResult::ErrorMismatchOutputType(ref s) => s,
+            _ => return None,
+        })
     }
 }
 
@@ -42,15 +50,21 @@ impl PartialEq for EvalAltResult {
         use EvalAltResult::*;
 
         match (self, other) {
+            (&ErrorParseError(ref a), &ErrorParseError(ref b)) => a == b,
             (&ErrorFunctionNotFound(ref a), &ErrorFunctionNotFound(ref b)) => a == b,
             (&ErrorFunctionArgMismatch, &ErrorFunctionArgMismatch) => true,
             (&ErrorIndexMismatch, &ErrorIndexMismatch) => true,
+            (&ErrorArrayMismatch, &ErrorArrayMismatch) => true,
+            (&ErrorArrayOutOfBounds(max1, index1), &ErrorArrayOutOfBounds(max2, index2)) => {
+                max1 == max2 && index1 == index2
+            }
             (&ErrorIfGuardMismatch, &ErrorIfGuardMismatch) => true,
+            (&ErrorForMismatch, &ErrorForMismatch) => true,
             (&ErrorVariableNotFound(ref a), &ErrorVariableNotFound(ref b)) => a == b,
             (&ErrorAssignmentToUnknownLHS, &ErrorAssignmentToUnknownLHS) => true,
             (&ErrorMismatchOutputType(ref a), &ErrorMismatchOutputType(ref b)) => a == b,
-            (&ErrorCantOpenScriptFile, &ErrorCantOpenScriptFile) => true,
-            (&InternalErrorMalformedDotExpression, &InternalErrorMalformedDotExpression) => true,
+            (&ErrorCantOpenScriptFile(ref a), &ErrorCantOpenScriptFile(ref b)) => a == b,
+            (&ErrorMalformedDotExpression, &ErrorMalformedDotExpression) => true,
             (&LoopBreak, &LoopBreak) => true,
             _ => false,
         }
@@ -60,21 +74,27 @@ impl PartialEq for EvalAltResult {
 impl Error for EvalAltResult {
     fn description(&self) -> &str {
         match *self {
+            EvalAltResult::ErrorParseError(ref p) => p.description(),
             EvalAltResult::ErrorFunctionNotFound(_) => "Function not found",
             EvalAltResult::ErrorFunctionArgMismatch => "Function argument types do not match",
-            EvalAltResult::ErrorIndexMismatch => "Index does not match array",
+            EvalAltResult::ErrorIndexMismatch => "Array access expects integer index",
+            EvalAltResult::ErrorArrayMismatch => "Indexing can only be performed on an array",
+            EvalAltResult::ErrorArrayOutOfBounds(_, index) if index < 0 => {
+                "Array access expects non-negative index"
+            }
+            EvalAltResult::ErrorArrayOutOfBounds(max, _) if max == 0 => "Access of empty array",
+            EvalAltResult::ErrorArrayOutOfBounds(_, _) => "Array index out of bounds",
             EvalAltResult::ErrorIfGuardMismatch => "If guards expect boolean expression",
+            EvalAltResult::ErrorForMismatch => "For loops expect array",
             EvalAltResult::ErrorVariableNotFound(_) => "Variable not found",
             EvalAltResult::ErrorAssignmentToUnknownLHS => {
-                "Assignment to an unsupported left-hand side"
+                "Assignment to an unsupported left-hand side expression"
             }
-            EvalAltResult::ErrorMismatchOutputType(_) => "Cast of output failed",
-            EvalAltResult::ErrorCantOpenScriptFile => "Cannot open script file",
-            EvalAltResult::InternalErrorMalformedDotExpression => {
-                "[Internal error] Unexpected expression in dot expression"
-            }
-            EvalAltResult::LoopBreak => "Loop broken before completion (not an error)",
-            EvalAltResult::Return(_) => "Function returned value (not an error)",
+            EvalAltResult::ErrorMismatchOutputType(_) => "Output type is incorrect",
+            EvalAltResult::ErrorCantOpenScriptFile(_) => "Cannot open script file",
+            EvalAltResult::ErrorMalformedDotExpression => "Malformed dot expression",
+            EvalAltResult::LoopBreak => "[Not Error] Breaks out of loop",
+            EvalAltResult::Return(_) => "[Not Error] Function returns value",
         }
     }
 
@@ -88,7 +108,19 @@ impl fmt::Display for EvalAltResult {
         if let Some(s) = self.as_str() {
             write!(f, "{}: {}", self.description(), s)
         } else {
-            write!(f, "{}", self.description())
+            match self {
+                EvalAltResult::ErrorParseError(ref p) => write!(f, "Syntax error: {}", p),
+                EvalAltResult::ErrorArrayOutOfBounds(_, index) if *index < 0 => {
+                    write!(f, "{}: {} < 0", self.description(), index)
+                }
+                EvalAltResult::ErrorArrayOutOfBounds(max, _) if *max == 0 => {
+                    write!(f, "{}", self.description())
+                }
+                EvalAltResult::ErrorArrayOutOfBounds(max, index) => {
+                    write!(f, "{} (max {}): {}", self.description(), max - 1, index)
+                }
+                err => write!(f, "{}", err.description()),
+            }
         }
     }
 }
@@ -98,6 +130,8 @@ pub struct FnSpec {
     ident: String,
     args: Option<Vec<TypeId>>,
 }
+
+type IteratorFn = dyn Fn(&Box<dyn Any>) -> Box<dyn Iterator<Item = Box<dyn Any>>>;
 
 /// Rhai's engine type. This is what you use to run Rhai scripts
 ///
@@ -117,6 +151,7 @@ pub struct FnSpec {
 pub struct Engine {
     /// A hashmap containing all functions known to the engine
     pub fns: HashMap<FnSpec, Arc<FnIntExt>>,
+    pub type_iterators: HashMap<TypeId, Arc<IteratorFn>>,
 }
 
 pub enum FnIntExt {
@@ -167,16 +202,14 @@ impl Engine {
         debug_println!(
             "Trying to call function {:?} with args {:?}",
             ident,
-            args.iter().map(|x| (&**x).type_id()).collect::<Vec<_>>()
+            args.iter()
+                .map(|x| Any::type_name(&**x))
+                .collect::<Vec<_>>()
         );
 
         let spec = FnSpec {
             ident: ident.clone(),
-            args: Some(
-                args.iter()
-                    .map(|a| <dyn Any as Any>::type_id(&**a))
-                    .collect(),
-            ),
+            args: Some(args.iter().map(|a| Any::type_id(&**a)).collect()),
         };
 
         self.fns
@@ -193,7 +226,11 @@ impl Engine {
                     .iter()
                     .map(|x| (*(&**x).box_clone()).type_name())
                     .collect::<Vec<_>>();
-                EvalAltResult::ErrorFunctionNotFound(format!("{} ({})", ident, typenames.join(",")))
+                EvalAltResult::ErrorFunctionNotFound(format!(
+                    "{} ({})",
+                    ident,
+                    typenames.join(", ")
+                ))
             })
             .and_then(move |f| match **f {
                 FnIntExt::Ext(ref f) => f(args),
@@ -226,6 +263,14 @@ impl Engine {
     /// your type must implement Clone.
     pub fn register_type<T: Any>(&mut self) {
         // currently a no-op, exists for future extensibility
+    }
+
+    /// Register an iterator adapter for a type.
+    pub fn register_iterator<T: Any, F>(&mut self, f: F)
+    where
+        F: 'static + Fn(&Box<dyn Any>) -> Box<dyn Iterator<Item = Box<dyn Any>>>,
+    {
+        self.type_iterators.insert(TypeId::of::<T>(), Arc::new(f));
     }
 
     /// Register a get function for a member of a registered type
@@ -269,8 +314,8 @@ impl Engine {
         use std::iter::once;
 
         match *dot_rhs {
-            Expr::FnCall(ref fn_name, ref args) => {
-                let mut args: Vec<Box<dyn Any>> = args
+            Expr::FunctionCall(ref fn_name, ref args) => {
+                let mut args: Array = args
                     .iter()
                     .map(|arg| self.eval_expr(scope, arg))
                     .collect::<Result<Vec<_>, _>>()?;
@@ -291,10 +336,20 @@ impl Engine {
 
                 let mut val = self.call_fn_raw(get_fn_name, vec![this_ptr])?;
 
-                ((*val).downcast_mut() as Option<&mut Vec<Box<dyn Any>>>)
-                    .and_then(|arr| idx.downcast_ref::<i64>().map(|idx| (arr, *idx as usize)))
-                    .map(|(arr, idx)| arr[idx].clone())
-                    .ok_or(EvalAltResult::ErrorIndexMismatch)
+                ((*val).downcast_mut() as Option<&mut Array>)
+                    .ok_or(EvalAltResult::ErrorArrayMismatch)
+                    .and_then(|arr| {
+                        idx.downcast_ref::<i64>()
+                            .map(|idx| (arr, *idx))
+                            .ok_or(EvalAltResult::ErrorIndexMismatch)
+                    })
+                    .and_then(|(arr, idx)| match idx {
+                        x if x < 0 => Err(EvalAltResult::ErrorArrayOutOfBounds(0, x)),
+                        x => arr
+                            .get(x as usize)
+                            .cloned()
+                            .ok_or(EvalAltResult::ErrorArrayOutOfBounds(arr.len(), x)),
+                    })
             }
             Expr::Dot(ref inner_lhs, ref inner_rhs) => match **inner_lhs {
                 Expr::Identifier(ref id) => {
@@ -302,9 +357,9 @@ impl Engine {
                     self.call_fn_raw(get_fn_name, vec![this_ptr])
                         .and_then(|mut v| self.get_dot_val_helper(scope, v.as_mut(), inner_rhs))
                 }
-                _ => Err(EvalAltResult::InternalErrorMalformedDotExpression),
+                _ => Err(EvalAltResult::ErrorMalformedDotExpression),
             },
-            _ => Err(EvalAltResult::InternalErrorMalformedDotExpression),
+            _ => Err(EvalAltResult::ErrorMalformedDotExpression),
         }
     }
 
@@ -335,11 +390,19 @@ impl Engine {
             .eval_expr(scope, idx)?
             .downcast::<i64>()
             .map_err(|_| EvalAltResult::ErrorIndexMismatch)?;
-        let idx = *idx_boxed as usize;
+        let idx_raw = *idx_boxed;
+        let idx = match idx_raw {
+            x if x < 0 => return Err(EvalAltResult::ErrorArrayOutOfBounds(0, x)),
+            x => x as usize,
+        };
         let (idx_sc, val) = Self::search_scope(scope, id, |val| {
-            ((*val).downcast_mut() as Option<&mut Vec<Box<dyn Any>>>)
-                .map(|arr| arr[idx].clone())
-                .ok_or(EvalAltResult::ErrorIndexMismatch)
+            ((*val).downcast_mut() as Option<&mut Array>)
+                .ok_or(EvalAltResult::ErrorArrayMismatch)
+                .and_then(|arr| {
+                    arr.get(idx)
+                        .cloned()
+                        .ok_or(EvalAltResult::ErrorArrayOutOfBounds(arr.len(), idx_raw))
+                })
         })?;
 
         Ok((idx_sc, idx, val))
@@ -368,11 +431,11 @@ impl Engine {
 
                 // In case the expression mutated `target`, we need to reassign it because
                 // of the above `clone`.
-                scope[sc_idx].1.downcast_mut::<Vec<Box<dyn Any>>>().unwrap()[idx] = target;
+                scope[sc_idx].1.downcast_mut::<Array>().unwrap()[idx] = target;
 
                 value
             }
-            _ => Err(EvalAltResult::InternalErrorMalformedDotExpression),
+            _ => Err(EvalAltResult::ErrorMalformedDotExpression),
         }
     }
 
@@ -401,9 +464,9 @@ impl Engine {
                             self.call_fn_raw(set_fn_name, vec![this_ptr, v.as_mut()])
                         })
                 }
-                _ => Err(EvalAltResult::InternalErrorMalformedDotExpression),
+                _ => Err(EvalAltResult::ErrorMalformedDotExpression),
             },
-            _ => Err(EvalAltResult::InternalErrorMalformedDotExpression),
+            _ => Err(EvalAltResult::ErrorMalformedDotExpression),
         }
     }
 
@@ -431,20 +494,20 @@ impl Engine {
 
                 // In case the expression mutated `target`, we need to reassign it because
                 // of the above `clone`.
-                scope[sc_idx].1.downcast_mut::<Vec<Box<dyn Any>>>().unwrap()[idx] = target;
+                scope[sc_idx].1.downcast_mut::<Array>().unwrap()[idx] = target;
 
                 value
             }
-            _ => Err(EvalAltResult::InternalErrorMalformedDotExpression),
+            _ => Err(EvalAltResult::ErrorMalformedDotExpression),
         }
     }
 
     fn eval_expr(&self, scope: &mut Scope, expr: &Expr) -> Result<Box<dyn Any>, EvalAltResult> {
         match *expr {
-            Expr::IntConst(i) => Ok(Box::new(i)),
-            Expr::FloatConst(i) => Ok(Box::new(i)),
-            Expr::StringConst(ref s) => Ok(Box::new(s.clone())),
-            Expr::CharConst(ref c) => Ok(Box::new(*c)),
+            Expr::IntegerConstant(i) => Ok(Box::new(i)),
+            Expr::FloatConstant(i) => Ok(Box::new(i)),
+            Expr::StringConstant(ref s) => Ok(Box::new(s.clone())),
+            Expr::CharConstant(ref c) => Ok(Box::new(*c)),
             Expr::Identifier(ref id) => {
                 for &mut (ref name, ref mut val) in &mut scope.iter_mut().rev() {
                     if *id == *name {
@@ -475,18 +538,27 @@ impl Engine {
 
                         for &mut (ref name, ref mut val) in &mut scope.iter_mut().rev() {
                             if *id == *name {
-                                if let Some(i) = idx.downcast_ref::<i64>() {
+                                return if let Some(&i) = idx.downcast_ref::<i64>() {
                                     if let Some(arr_typed) =
-                                        (*val).downcast_mut() as Option<&mut Vec<Box<dyn Any>>>
+                                        (*val).downcast_mut() as Option<&mut Array>
                                     {
-                                        arr_typed[*i as usize] = rhs_val;
-                                        return Ok(Box::new(()));
+                                        if i < 0 {
+                                            Err(EvalAltResult::ErrorArrayOutOfBounds(0, i))
+                                        } else if i as usize >= arr_typed.len() {
+                                            Err(EvalAltResult::ErrorArrayOutOfBounds(
+                                                arr_typed.len(),
+                                                i,
+                                            ))
+                                        } else {
+                                            arr_typed[i as usize] = rhs_val;
+                                            Ok(Box::new(()))
+                                        }
                                     } else {
-                                        return Err(EvalAltResult::ErrorIndexMismatch);
+                                        Err(EvalAltResult::ErrorIndexMismatch)
                                     }
                                 } else {
-                                    return Err(EvalAltResult::ErrorIndexMismatch);
-                                }
+                                    Err(EvalAltResult::ErrorIndexMismatch)
+                                };
                             }
                         }
 
@@ -509,11 +581,11 @@ impl Engine {
 
                 Ok(Box::new(arr))
             }
-            Expr::FnCall(ref fn_name, ref args) => self.call_fn_raw(
+            Expr::FunctionCall(ref fn_name, ref args) => self.call_fn_raw(
                 fn_name.to_owned(),
                 args.iter()
                     .map(|ex| self.eval_expr(scope, ex))
-                    .collect::<Result<Vec<Box<dyn Any>>, _>>()?
+                    .collect::<Result<Array, _>>()?
                     .iter_mut()
                     .map(|b| b.as_mut())
                     .collect(),
@@ -595,13 +667,33 @@ impl Engine {
                     _ => (),
                 }
             },
+            Stmt::For(ref name, ref expr, ref body) => {
+                let arr = self.eval_expr(scope, expr)?;
+                let tid = Any::type_id(&*arr);
+                if let Some(iter_fn) = self.type_iterators.get(&tid) {
+                    scope.push((name.clone(), Box::new(())));
+                    let idx = scope.len() - 1;
+                    for a in iter_fn(&arr) {
+                        scope[idx].1 = a;
+                        match self.eval_stmt(scope, body) {
+                            Err(EvalAltResult::LoopBreak) => break,
+                            Err(x) => return Err(x),
+                            _ => (),
+                        }
+                    }
+                    scope.remove(idx);
+                    Ok(Box::new(()))
+                } else {
+                    return Err(EvalAltResult::ErrorForMismatch);
+                }
+            }
             Stmt::Break => Err(EvalAltResult::LoopBreak),
             Stmt::Return => Err(EvalAltResult::Return(Box::new(()))),
             Stmt::ReturnWithVal(ref a) => {
                 let result = self.eval_expr(scope, a)?;
                 Err(EvalAltResult::Return(result))
             }
-            Stmt::Var(ref name, ref init) => {
+            Stmt::Let(ref name, ref init) => {
                 match *init {
                     Some(ref v) => {
                         let i = self.eval_expr(scope, v)?;
@@ -611,6 +703,34 @@ impl Engine {
                 };
                 Ok(Box::new(()))
             }
+        }
+    }
+
+    /// Compile a string into an AST
+    pub fn compile(input: &str) -> Result<AST, ParseError> {
+        let tokens = lex(input);
+
+        let mut peekables = tokens.peekable();
+        let tree = parse(&mut peekables);
+
+        tree
+    }
+
+    /// Compile a file into an AST
+    pub fn compile_file(fname: &str) -> Result<AST, EvalAltResult> {
+        use std::fs::File;
+        use std::io::prelude::*;
+
+        if let Ok(mut f) = File::open(fname) {
+            let mut contents = String::new();
+
+            if f.read_to_string(&mut contents).is_ok() {
+                Self::compile(&contents).map_err(|err| EvalAltResult::ErrorParseError(err))
+            } else {
+                Err(EvalAltResult::ErrorCantOpenScriptFile(fname.to_owned()))
+            }
+        } else {
+            Err(EvalAltResult::ErrorCantOpenScriptFile(fname.to_owned()))
         }
     }
 
@@ -625,62 +745,68 @@ impl Engine {
             if f.read_to_string(&mut contents).is_ok() {
                 self.eval::<T>(&contents)
             } else {
-                Err(EvalAltResult::ErrorCantOpenScriptFile)
+                Err(EvalAltResult::ErrorCantOpenScriptFile(fname.to_owned()))
             }
         } else {
-            Err(EvalAltResult::ErrorCantOpenScriptFile)
+            Err(EvalAltResult::ErrorCantOpenScriptFile(fname.to_owned()))
         }
     }
 
     /// Evaluate a string
     pub fn eval<T: Any + Clone>(&mut self, input: &str) -> Result<T, EvalAltResult> {
         let mut scope = Scope::new();
-
         self.eval_with_scope(&mut scope, input)
     }
 
-    /// Evaluate with own scope
+    /// Evaluate a string with own scope
     pub fn eval_with_scope<T: Any + Clone>(
         &mut self,
         scope: &mut Scope,
         input: &str,
     ) -> Result<T, EvalAltResult> {
-        let tokens = lex(input);
+        let ast = Self::compile(input).map_err(|err| EvalAltResult::ErrorParseError(err))?;
+        self.eval_ast_with_scope(scope, &ast)
+    }
 
-        let mut peekables = tokens.peekable();
-        let tree = parse(&mut peekables);
+    /// Evaluate an AST
+    pub fn eval_ast<T: Any + Clone>(&mut self, ast: &AST) -> Result<T, EvalAltResult> {
+        let mut scope = Scope::new();
+        self.eval_ast_with_scope(&mut scope, ast)
+    }
 
-        match tree {
-            Ok((ref os, ref fns)) => {
-                let mut x: Result<Box<dyn Any>, EvalAltResult> = Ok(Box::new(()));
+    /// Evaluate an AST with own scope
+    pub fn eval_ast_with_scope<T: Any + Clone>(
+        &mut self,
+        scope: &mut Scope,
+        ast: &AST,
+    ) -> Result<T, EvalAltResult> {
+        let AST(os, fns) = ast;
+        let mut x: Result<Box<dyn Any>, EvalAltResult> = Ok(Box::new(()));
 
-                for f in fns {
-                    let name = f.name.clone();
-                    let local_f = f.clone();
+        for f in fns {
+            let name = f.name.clone();
+            let local_f = f.clone();
 
-                    let spec = FnSpec {
-                        ident: name,
-                        args: None,
-                    };
+            let spec = FnSpec {
+                ident: name,
+                args: None,
+            };
 
-                    self.fns.insert(spec, Arc::new(FnIntExt::Int(local_f)));
-                }
+            self.fns.insert(spec, Arc::new(FnIntExt::Int(local_f)));
+        }
 
-                for o in os {
-                    x = match self.eval_stmt(scope, o) {
-                        Ok(v) => Ok(v),
-                        Err(e) => return Err(e),
-                    }
-                }
-
-                let x = x?;
-
-                match x.downcast::<T>() {
-                    Ok(out) => Ok(*out),
-                    Err(a) => Err(EvalAltResult::ErrorMismatchOutputType((*a).type_name())),
-                }
+        for o in os {
+            x = match self.eval_stmt(scope, o) {
+                Ok(v) => Ok(v),
+                Err(e) => return Err(e),
             }
-            Err(_) => Err(EvalAltResult::ErrorFunctionArgMismatch),
+        }
+
+        let x = x?;
+
+        match x.downcast::<T>() {
+            Ok(out) => Ok(*out),
+            Err(a) => Err(EvalAltResult::ErrorMismatchOutputType((*a).type_name())),
         }
     }
 
@@ -701,10 +827,10 @@ impl Engine {
                     Ok(())
                 }
             } else {
-                Err(EvalAltResult::ErrorCantOpenScriptFile)
+                Err(EvalAltResult::ErrorCantOpenScriptFile(fname.to_owned()))
             }
         } else {
-            Err(EvalAltResult::ErrorCantOpenScriptFile)
+            Err(EvalAltResult::ErrorCantOpenScriptFile(fname.to_owned()))
         }
     }
 
@@ -715,7 +841,7 @@ impl Engine {
         self.consume_with_scope(&mut Scope::new(), input)
     }
 
-    /// Evaluate a string with own scoppe, but only return errors, if there are any.
+    /// Evaluate a string with own scope, but only return errors, if there are any.
     /// Useful for when you don't need the result, but still need
     /// to keep track of possible errors
     pub fn consume_with_scope(
@@ -729,7 +855,7 @@ impl Engine {
         let tree = parse(&mut peekables);
 
         match tree {
-            Ok((ref os, ref fns)) => {
+            Ok(AST(ref os, ref fns)) => {
                 for f in fns {
                     if f.params.len() > 6 {
                         return Ok(());
@@ -757,7 +883,7 @@ impl Engine {
         }
     }
 
-    /// Register the default library. That means, numberic types, char, bool
+    /// Register the default library. That means, numeric types, char, bool
     /// String, arithmetics and string concatenations.
     pub fn register_default_lib(engine: &mut Engine) {
         macro_rules! reg_op {
@@ -780,6 +906,30 @@ impl Engine {
             ($engine:expr, $x:expr, $op:expr, $( $y:ty ),*) => (
                 $(
                     $engine.register_fn($x, $op as fn(x: $y, y: $y)->bool);
+                )*
+            )
+        }
+
+        macro_rules! reg_func1 {
+            ($engine:expr, $x:expr, $op:expr, $r:ty, $( $y:ty ),*) => (
+                $(
+                    $engine.register_fn($x, $op as fn(x: $y)->$r);
+                )*
+            )
+        }
+
+        macro_rules! reg_func2x {
+            ($engine:expr, $x:expr, $op:expr, $v:ty, $r:ty, $( $y:ty ),*) => (
+                $(
+                    $engine.register_fn($x, $op as fn(x: $v, y: $y)->$r);
+                )*
+            )
+        }
+
+        macro_rules! reg_func2y {
+            ($engine:expr, $x:expr, $op:expr, $v:ty, $r:ty, $( $y:ty ),*) => (
+                $(
+                    $engine.register_fn($x, $op as fn(y: $y, x: $v)->$r);
                 )*
             )
         }
@@ -896,12 +1046,79 @@ impl Engine {
         // FIXME?  Registering array lookups are a special case because we want to return boxes
         // directly let ent = engine.fns.entry("[]".to_string()).or_insert_with(Vec::new);
         // (*ent).push(FnType::ExternalFn2(Box::new(idx)));
+
+        // Register print and debug
+        fn print_debug<T: Debug>(x: T) {
+            println!("{:?}", x);
+        }
+        fn print<T: Display>(x: T) {
+            println!("{}", x);
+        }
+
+        reg_func1!(engine, "print", print, (), i32, i64, u32, u64);
+        reg_func1!(engine, "print", print, (), f32, f64, bool, String);
+        reg_func1!(engine, "print", print_debug, (), Array);
+        engine.register_fn("print", |_: ()| println!());
+
+        reg_func1!(engine, "debug", print_debug, (), i32, i64, u32, u64);
+        reg_func1!(engine, "debug", print_debug, (), f32, f64, bool, String);
+        reg_func1!(engine, "debug", print_debug, (), Array, ());
+
+        // Register array functions
+        fn push<T: Any + 'static>(list: &mut Array, item: T) {
+            list.push(Box::new(item));
+        }
+
+        reg_func2x!(engine, "push", push, &mut Array, (), i32, i64, u32, u64);
+        reg_func2x!(engine, "push", push, &mut Array, (), f32, f64, bool);
+        reg_func2x!(engine, "push", push, &mut Array, (), String, Array, ());
+
+        engine.register_box_fn("pop", |list: &mut Array| list.pop().unwrap());
+        engine.register_box_fn("shift", |list: &mut Array| list.remove(0));
+        engine.register_fn("len", |list: &mut Array| -> i64 {
+            list.len().try_into().unwrap()
+        });
+
+        // Register string concatenate functions
+        fn prepend<T: Display>(x: T, y: String) -> String {
+            format!("{}{}", x, y)
+        }
+        fn append<T: Display>(x: String, y: T) -> String {
+            format!("{}{}", x, y)
+        }
+
+        reg_func2x!(engine, "+", append, String, String, i32, i64, u32, u64, f32, f64, bool);
+        engine.register_fn("+", |x: String, y: Array| format!("{}{:?}", x, y));
+        engine.register_fn("+", |x: String, _: ()| format!("{}", x));
+
+        reg_func2y!(engine, "+", prepend, String, String, i32, i64, u32, u64, f32, f64, bool);
+        engine.register_fn("+", |x: Array, y: String| format!("{:?}{}", x, y));
+        engine.register_fn("+", |_: (), y: String| format!("{}", y));
+
+        // Register array iterator
+        engine.register_iterator::<Array, _>(|a| {
+            Box::new(a.downcast_ref::<Array>().unwrap().clone().into_iter())
+        });
+
+        // Register range function
+        use std::ops::Range;
+        engine.register_iterator::<Range<i64>, _>(|a| {
+            Box::new(
+                a.downcast_ref::<Range<i64>>()
+                    .unwrap()
+                    .clone()
+                    .map(|n| Box::new(n) as Box<dyn Any>),
+            )
+        });
+
+        engine.register_fn("range", |i1: i64, i2: i64| (i1..i2));
     }
 
     /// Make a new engine
     pub fn new() -> Engine {
         let mut engine = Engine {
             fns: HashMap::new(),
+            type_iterators: HashMap::new(),
         };
 
         Engine::register_default_lib(&mut engine);

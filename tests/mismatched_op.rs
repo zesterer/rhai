@@ -6,8 +6,8 @@ fn test_mismatched_op() {
 
     assert_eq!(
         engine.eval::<i64>("60 + \"hello\""),
-        Err(EvalAltResult::ErrorFunctionNotFound(
-            "+ (i64,alloc::string::String)".into()
+        Err(EvalAltResult::ErrorMismatchOutputType(
+            "alloc::string::String".into()
         ))
     );
 }
@@ -32,7 +32,7 @@ fn test_mismatched_op_custom_type() {
     assert_eq!(
         engine.eval::<i64>("60 + new_ts()"),
         Err(EvalAltResult::ErrorFunctionNotFound(
-            "+ (i64,mismatched_op::test_mismatched_op_custom_type::TestStruct)".into()
+            "+ (i64, mismatched_op::test_mismatched_op_custom_type::TestStruct)".into()
         ))
     );
 }
