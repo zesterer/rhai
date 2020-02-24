@@ -26,7 +26,7 @@ pub enum EvalAltResult {
     ErrorVariableNotFound(String),
     ErrorAssignmentToUnknownLHS,
     ErrorMismatchOutputType(String),
-    ErrorCantOpenScriptFile,
+    ErrorCantOpenScriptFile(String),
     InternalErrorMalformedDotExpression,
     LoopBreak,
     Return(Box<dyn Any>),
@@ -35,6 +35,7 @@ pub enum EvalAltResult {
 impl EvalAltResult {
     fn as_str(&self) -> Option<&str> {
         match *self {
+            EvalAltResult::ErrorCantOpenScriptFile(ref s) => Some(s.as_str()),
             EvalAltResult::ErrorVariableNotFound(ref s) => Some(s.as_str()),
             EvalAltResult::ErrorFunctionNotFound(ref s) => Some(s.as_str()),
             EvalAltResult::ErrorMismatchOutputType(ref s) => Some(s.as_str()),
@@ -60,7 +61,7 @@ impl PartialEq for EvalAltResult {
             (&ErrorVariableNotFound(ref a), &ErrorVariableNotFound(ref b)) => a == b,
             (&ErrorAssignmentToUnknownLHS, &ErrorAssignmentToUnknownLHS) => true,
             (&ErrorMismatchOutputType(ref a), &ErrorMismatchOutputType(ref b)) => a == b,
-            (&ErrorCantOpenScriptFile, &ErrorCantOpenScriptFile) => true,
+            (&ErrorCantOpenScriptFile(ref a), &ErrorCantOpenScriptFile(ref b)) => a == b,
             (&InternalErrorMalformedDotExpression, &InternalErrorMalformedDotExpression) => true,
             (&LoopBreak, &LoopBreak) => true,
             _ => false,
@@ -87,7 +88,7 @@ impl Error for EvalAltResult {
                 "Assignment to an unsupported left-hand side"
             }
             EvalAltResult::ErrorMismatchOutputType(_) => "Cast of output failed",
-            EvalAltResult::ErrorCantOpenScriptFile => "Cannot open script file",
+            EvalAltResult::ErrorCantOpenScriptFile(_) => "Cannot open script file",
             EvalAltResult::InternalErrorMalformedDotExpression => {
                 "[Internal error] Unexpected expression in dot expression"
             }
@@ -710,10 +711,10 @@ impl Engine {
             if f.read_to_string(&mut contents).is_ok() {
                 self.eval::<T>(&contents)
             } else {
-                Err(EvalAltResult::ErrorCantOpenScriptFile)
+                Err(EvalAltResult::ErrorCantOpenScriptFile(fname.to_owned()))
             }
         } else {
-            Err(EvalAltResult::ErrorCantOpenScriptFile)
+            Err(EvalAltResult::ErrorCantOpenScriptFile(fname.to_owned()))
         }
     }
 
@@ -786,10 +787,10 @@ impl Engine {
                     Ok(())
                 }
             } else {
-                Err(EvalAltResult::ErrorCantOpenScriptFile)
+                Err(EvalAltResult::ErrorCantOpenScriptFile(fname.to_owned()))
             }
         } else {
-            Err(EvalAltResult::ErrorCantOpenScriptFile)
+            Err(EvalAltResult::ErrorCantOpenScriptFile(fname.to_owned()))
         }
     }
 
@@ -800,7 +801,7 @@ impl Engine {
         self.consume_with_scope(&mut Scope::new(), input)
     }
 
-    /// Evaluate a string with own scoppe, but only return errors, if there are any.
+    /// Evaluate a string with own scope, but only return errors, if there are any.
     /// Useful for when you don't need the result, but still need
     /// to keep track of possible errors
     pub fn consume_with_scope(
@@ -842,7 +843,7 @@ impl Engine {
         }
     }
 
-    /// Register the default library. That means, numberic types, char, bool
+    /// Register the default library. That means, numeric types, char, bool
     /// String, arithmetics and string concatenations.
     pub fn register_default_lib(engine: &mut Engine) {
         macro_rules! reg_op {
