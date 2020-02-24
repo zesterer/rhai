@@ -32,7 +32,7 @@ fn test_mismatched_op_custom_type() {
     assert_eq!(
         engine.eval::<i64>("60 + new_ts()"),
         Err(EvalAltResult::ErrorFunctionNotFound(
-            "+ (i64,mismatched_op::test_mismatched_op_custom_type::TestStruct)".into()
+            "+ (i64, mismatched_op::test_mismatched_op_custom_type::TestStruct)".into()
         ))
     );
 }

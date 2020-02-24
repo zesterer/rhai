@@ -48,3 +48,4 @@ mod parser;
 pub use any::Any;
 pub use engine::{Engine, EvalAltResult, Scope};
 pub use fn_register::{RegisterBoxFn, RegisterFn};
+pub use parser::{ParseError, ParseErrorType, AST};

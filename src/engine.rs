@@ -9,13 +9,14 @@ use std::{convert::TryInto, sync::Arc};
 use crate::any::{Any, AnyExt};
 use crate::call::FunArgs;
 use crate::fn_register::{RegisterBoxFn, RegisterFn};
-use crate::parser::{lex, parse, Expr, FnDef, Stmt};
+use crate::parser::{lex, parse, Expr, FnDef, ParseError, Stmt, AST};
 use fmt::{Debug, Display};
 
 type Array = Vec<Box<dyn Any>>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum EvalAltResult {
+    ErrorParseError(ParseError),
     ErrorFunctionNotFound(String),
     ErrorFunctionArgMismatch,
     ErrorArrayOutOfBounds(usize, i64),
@@ -27,20 +28,20 @@ pub enum EvalAltResult {
     ErrorAssignmentToUnknownLHS,
     ErrorMismatchOutputType(String),
     ErrorCantOpenScriptFile(String),
-    InternalErrorMalformedDotExpression,
+    ErrorMalformedDotExpression,
     LoopBreak,
     Return(Box<dyn Any>),
 }
 
 impl EvalAltResult {
     fn as_str(&self) -> Option<&str> {
-        match *self {
-            EvalAltResult::ErrorCantOpenScriptFile(ref s) => Some(s.as_str()),
-            EvalAltResult::ErrorVariableNotFound(ref s) => Some(s.as_str()),
-            EvalAltResult::ErrorFunctionNotFound(ref s) => Some(s.as_str()),
-            EvalAltResult::ErrorMismatchOutputType(ref s) => Some(s.as_str()),
-            _ => None,
-        }
+        Some(match *self {
+            EvalAltResult::ErrorCantOpenScriptFile(ref s)
+            | EvalAltResult::ErrorVariableNotFound(ref s)
+            | EvalAltResult::ErrorFunctionNotFound(ref s)
+            | EvalAltResult::ErrorMismatchOutputType(ref s) => s,
+            _ => return None,
+        })
     }
 }
 
@@ -49,6 +50,7 @@ impl PartialEq for EvalAltResult {
         use EvalAltResult::*;
 
         match (self, other) {
+            (&ErrorParseError(ref a), &ErrorParseError(ref b)) => a == b,
             (&ErrorFunctionNotFound(ref a), &ErrorFunctionNotFound(ref b)) => a == b,
             (&ErrorFunctionArgMismatch, &ErrorFunctionArgMismatch) => true,
             (&ErrorIndexMismatch, &ErrorIndexMismatch) => true,
@@ -62,7 +64,7 @@ impl PartialEq for EvalAltResult {
             (&ErrorAssignmentToUnknownLHS, &ErrorAssignmentToUnknownLHS) => true,
             (&ErrorMismatchOutputType(ref a), &ErrorMismatchOutputType(ref b)) => a == b,
             (&ErrorCantOpenScriptFile(ref a), &ErrorCantOpenScriptFile(ref b)) => a == b,
-            (&InternalErrorMalformedDotExpression, &InternalErrorMalformedDotExpression) => true,
+            (&ErrorMalformedDotExpression, &ErrorMalformedDotExpression) => true,
             (&LoopBreak, &LoopBreak) => true,
             _ => false,
         }
@@ -72,6 +74,7 @@ impl PartialEq for EvalAltResult {
 impl Error for EvalAltResult {
     fn description(&self) -> &str {
         match *self {
+            EvalAltResult::ErrorParseError(ref p) => p.description(),
             EvalAltResult::ErrorFunctionNotFound(_) => "Function not found",
             EvalAltResult::ErrorFunctionArgMismatch => "Function argument types do not match",
             EvalAltResult::ErrorIndexMismatch => "Array access expects integer index",
@@ -85,15 +88,13 @@ impl Error for EvalAltResult {
             EvalAltResult::ErrorForMismatch => "For loops expect array",
             EvalAltResult::ErrorVariableNotFound(_) => "Variable not found",
             EvalAltResult::ErrorAssignmentToUnknownLHS => {
-                "Assignment to an unsupported left-hand side"
+                "Assignment to an unsupported left-hand side expression"
             }
-            EvalAltResult::ErrorMismatchOutputType(_) => "Cast of output failed",
+            EvalAltResult::ErrorMismatchOutputType(_) => "Output type is incorrect",
             EvalAltResult::ErrorCantOpenScriptFile(_) => "Cannot open script file",
-            EvalAltResult::InternalErrorMalformedDotExpression => {
-                "[Internal error] Unexpected expression in dot expression"
-            }
-            EvalAltResult::LoopBreak => "Loop broken before completion (not an error)",
-            EvalAltResult::Return(_) => "Function returned value (not an error)",
+            EvalAltResult::ErrorMalformedDotExpression => "Malformed dot expression",
+            EvalAltResult::LoopBreak => "[Not Error] Breaks out of loop",
+            EvalAltResult::Return(_) => "[Not Error] Function returns value",
         }
     }
 
@@ -108,6 +109,7 @@ impl fmt::Display for EvalAltResult {
             write!(f, "{}: {}", self.description(), s)
         } else {
             match self {
+                EvalAltResult::ErrorParseError(ref p) => write!(f, "Syntax error: {}", p),
                 EvalAltResult::ErrorArrayOutOfBounds(_, index) if *index < 0 => {
                     write!(f, "{}: {} < 0", self.description(), index)
                 }
@@ -224,7 +226,11 @@ impl Engine {
                     .iter()
                     .map(|x| (*(&**x).box_clone()).type_name())
                     .collect::<Vec<_>>();
-                EvalAltResult::ErrorFunctionNotFound(format!("{} ({})", ident, typenames.join(",")))
+                EvalAltResult::ErrorFunctionNotFound(format!(
+                    "{} ({})",
+                    ident,
+                    typenames.join(", ")
+                ))
             })
             .and_then(move |f| match **f {
                 FnIntExt::Ext(ref f) => f(args),
@@ -308,7 +314,7 @@ impl Engine {
         use std::iter::once;
 
         match *dot_rhs {
-            Expr::FnCall(ref fn_name, ref args) => {
+            Expr::FunctionCall(ref fn_name, ref args) => {
                 let mut args: Array = args
                     .iter()
                     .map(|arg| self.eval_expr(scope, arg))
@@ -351,9 +357,9 @@ impl Engine {
                     self.call_fn_raw(get_fn_name, vec![this_ptr])
                         .and_then(|mut v| self.get_dot_val_helper(scope, v.as_mut(), inner_rhs))
                 }
-                _ => Err(EvalAltResult::InternalErrorMalformedDotExpression),
+                _ => Err(EvalAltResult::ErrorMalformedDotExpression),
             },
-            _ => Err(EvalAltResult::InternalErrorMalformedDotExpression),
+            _ => Err(EvalAltResult::ErrorMalformedDotExpression),
         }
     }
 
@@ -429,7 +435,7 @@ impl Engine {
 
                 value
             }
-            _ => Err(EvalAltResult::InternalErrorMalformedDotExpression),
+            _ => Err(EvalAltResult::ErrorMalformedDotExpression),
         }
     }
 
@@ -458,9 +464,9 @@ impl Engine {
                             self.call_fn_raw(set_fn_name, vec![this_ptr, v.as_mut()])
                         })
                 }
-                _ => Err(EvalAltResult::InternalErrorMalformedDotExpression),
+                _ => Err(EvalAltResult::ErrorMalformedDotExpression),
             },
-            _ => Err(EvalAltResult::InternalErrorMalformedDotExpression),
+            _ => Err(EvalAltResult::ErrorMalformedDotExpression),
         }
     }
 
@@ -492,16 +498,16 @@ impl Engine {
 
                 value
             }
-            _ => Err(EvalAltResult::InternalErrorMalformedDotExpression),
+            _ => Err(EvalAltResult::ErrorMalformedDotExpression),
         }
     }
 
     fn eval_expr(&self, scope: &mut Scope, expr: &Expr) -> Result<Box<dyn Any>, EvalAltResult> {
         match *expr {
-            Expr::IntConst(i) => Ok(Box::new(i)),
-            Expr::FloatConst(i) => Ok(Box::new(i)),
-            Expr::StringConst(ref s) => Ok(Box::new(s.clone())),
-            Expr::CharConst(ref c) => Ok(Box::new(*c)),
+            Expr::IntegerConstant(i) => Ok(Box::new(i)),
+            Expr::FloatConstant(i) => Ok(Box::new(i)),
+            Expr::StringConstant(ref s) => Ok(Box::new(s.clone())),
+            Expr::CharConstant(ref c) => Ok(Box::new(*c)),
             Expr::Identifier(ref id) => {
                 for &mut (ref name, ref mut val) in &mut scope.iter_mut().rev() {
                     if *id == *name {
@@ -575,7 +581,7 @@ impl Engine {
 
                 Ok(Box::new(arr))
             }
-            Expr::FnCall(ref fn_name, ref args) => self.call_fn_raw(
+            Expr::FunctionCall(ref fn_name, ref args) => self.call_fn_raw(
                 fn_name.to_owned(),
                 args.iter()
                     .map(|ex| self.eval_expr(scope, ex))
@@ -687,7 +693,7 @@ impl Engine {
                 let result = self.eval_expr(scope, a)?;
                 Err(EvalAltResult::Return(result))
             }
-            Stmt::Var(ref name, ref init) => {
+            Stmt::Let(ref name, ref init) => {
                 match *init {
                     Some(ref v) => {
                         let i = self.eval_expr(scope, v)?;
@@ -697,6 +703,34 @@ impl Engine {
                 };
                 Ok(Box::new(()))
             }
+        }
+    }
+
+    /// Compile a string into an AST
+    pub fn compile(input: &str) -> Result<AST, ParseError> {
+        let tokens = lex(input);
+
+        let mut peekables = tokens.peekable();
+        let tree = parse(&mut peekables);
+
+        tree
+    }
+
+    /// Compile a file into an AST
+    pub fn compile_file(fname: &str) -> Result<AST, EvalAltResult> {
+        use std::fs::File;
+        use std::io::prelude::*;
+
+        if let Ok(mut f) = File::open(fname) {
+            let mut contents = String::new();
+
+            if f.read_to_string(&mut contents).is_ok() {
+                Self::compile(&contents).map_err(|err| EvalAltResult::ErrorParseError(err))
+            } else {
+                Err(EvalAltResult::ErrorCantOpenScriptFile(fname.to_owned()))
+            }
+        } else {
+            Err(EvalAltResult::ErrorCantOpenScriptFile(fname.to_owned()))
         }
     }
 
@@ -721,52 +755,58 @@ impl Engine {
     /// Evaluate a string
     pub fn eval<T: Any + Clone>(&mut self, input: &str) -> Result<T, EvalAltResult> {
         let mut scope = Scope::new();
-
         self.eval_with_scope(&mut scope, input)
     }
 
-    /// Evaluate with own scope
+    /// Evaluate a string with own scope
     pub fn eval_with_scope<T: Any + Clone>(
         &mut self,
         scope: &mut Scope,
         input: &str,
     ) -> Result<T, EvalAltResult> {
-        let tokens = lex(input);
+        let ast = Self::compile(input).map_err(|err| EvalAltResult::ErrorParseError(err))?;
+        self.eval_ast_with_scope(scope, &ast)
+    }
 
-        let mut peekables = tokens.peekable();
-        let tree = parse(&mut peekables);
+    /// Evaluate an AST
+    pub fn eval_ast<T: Any + Clone>(&mut self, ast: &AST) -> Result<T, EvalAltResult> {
+        let mut scope = Scope::new();
+        self.eval_ast_with_scope(&mut scope, ast)
+    }
 
-        match tree {
-            Ok((ref os, ref fns)) => {
-                let mut x: Result<Box<dyn Any>, EvalAltResult> = Ok(Box::new(()));
+    /// Evaluate an AST with own scope
+    pub fn eval_ast_with_scope<T: Any + Clone>(
+        &mut self,
+        scope: &mut Scope,
+        ast: &AST,
+    ) -> Result<T, EvalAltResult> {
+        let AST(os, fns) = ast;
+        let mut x: Result<Box<dyn Any>, EvalAltResult> = Ok(Box::new(()));
 
-                for f in fns {
-                    let name = f.name.clone();
-                    let local_f = f.clone();
+        for f in fns {
+            let name = f.name.clone();
+            let local_f = f.clone();
 
-                    let spec = FnSpec {
-                        ident: name,
-                        args: None,
-                    };
+            let spec = FnSpec {
+                ident: name,
+                args: None,
+            };
 
-                    self.fns.insert(spec, Arc::new(FnIntExt::Int(local_f)));
-                }
+            self.fns.insert(spec, Arc::new(FnIntExt::Int(local_f)));
+        }
 
-                for o in os {
-                    x = match self.eval_stmt(scope, o) {
-                        Ok(v) => Ok(v),
-                        Err(e) => return Err(e),
-                    }
-                }
-
-                let x = x?;
-
-                match x.downcast::<T>() {
-                    Ok(out) => Ok(*out),
-                    Err(a) => Err(EvalAltResult::ErrorMismatchOutputType((*a).type_name())),
-                }
+        for o in os {
+            x = match self.eval_stmt(scope, o) {
+                Ok(v) => Ok(v),
+                Err(e) => return Err(e),
             }
-            Err(_) => Err(EvalAltResult::ErrorFunctionArgMismatch),
+        }
+
+        let x = x?;
+
+        match x.downcast::<T>() {
+            Ok(out) => Ok(*out),
+            Err(a) => Err(EvalAltResult::ErrorMismatchOutputType((*a).type_name())),
         }
     }
 
@@ -815,7 +855,7 @@ impl Engine {
         let tree = parse(&mut peekables);
 
         match tree {
-            Ok((ref os, ref fns)) => {
+            Ok(AST(ref os, ref fns)) => {
                 for f in fns {
                     if f.params.len() > 6 {
                         return Ok(());
@@ -878,7 +918,7 @@ impl Engine {
             )
         }
 
-        macro_rules! reg_func2 {
+        macro_rules! reg_func2x {
             ($engine:expr, $x:expr, $op:expr, $v:ty, $r:ty, $( $y:ty ),*) => (
                 $(
                     $engine.register_fn($x, $op as fn(x: $v, y: $y)->$r);
@@ -886,7 +926,7 @@ impl Engine {
             )
         }
 
-        macro_rules! reg_func2b {
+        macro_rules! reg_func2y {
             ($engine:expr, $x:expr, $op:expr, $v:ty, $r:ty, $( $y:ty ),*) => (
                 $(
                     $engine.register_fn($x, $op as fn(y: $y, x: $v)->$r);
@@ -1018,54 +1058,42 @@ impl Engine {
         reg_func1!(engine, "print", print, (), i32, i64, u32, u64);
         reg_func1!(engine, "print", print, (), f32, f64, bool, String);
         reg_func1!(engine, "print", print_debug, (), Array);
+        engine.register_fn("print", |_: ()| println!());
 
         reg_func1!(engine, "debug", print_debug, (), i32, i64, u32, u64);
         reg_func1!(engine, "debug", print_debug, (), f32, f64, bool, String);
-        reg_func1!(engine, "debug", print_debug, (), Array);
+        reg_func1!(engine, "debug", print_debug, (), Array, ());
 
         // Register array functions
         fn push<T: Any + 'static>(list: &mut Array, item: T) {
             list.push(Box::new(item));
         }
-        fn pop(list: &mut Array) -> Box<dyn Any> {
-            list.pop().unwrap()
-        }
-        fn shift(list: &mut Array) -> Box<dyn Any> {
-            list.remove(0)
-        }
-        fn len(list: &mut Array) -> i64 {
+
+        reg_func2x!(engine, "push", push, &mut Array, (), i32, i64, u32, u64);
+        reg_func2x!(engine, "push", push, &mut Array, (), f32, f64, bool);
+        reg_func2x!(engine, "push", push, &mut Array, (), String, Array, ());
+
+        engine.register_box_fn("pop", |list: &mut Array| list.pop().unwrap());
+        engine.register_box_fn("shift", |list: &mut Array| list.remove(0));
+        engine.register_fn("len", |list: &mut Array| -> i64 {
             list.len().try_into().unwrap()
-        }
-
-        reg_func2!(engine, "push", push, &mut Array, (), i32, i64, u32, u64);
-        reg_func2!(engine, "push", push, &mut Array, (), f32, f64, bool);
-        reg_func2!(engine, "push", push, &mut Array, (), String, Array);
-
-        engine.register_box_fn("pop", pop);
-        engine.register_box_fn("shift", shift);
-        engine.register_fn("len", len);
+        });
 
         // Register string concatenate functions
         fn prepend<T: Display>(x: T, y: String) -> String {
             format!("{}{}", x, y)
         }
-        fn append<T: Display>(x: &mut String, y: T) -> String {
+        fn append<T: Display>(x: String, y: T) -> String {
             format!("{}{}", x, y)
         }
-        fn prepend_array(x: Array, y: String) -> String {
-            format!("{:?}{}", x, y)
-        }
-        fn append_array(x: &mut String, y: Array) -> String {
-            format!("{}{:?}", x, y)
-        }
 
-        reg_func2!(engine, "+", append, &mut String, String, i32, i64);
-        reg_func2!(engine, "+", append, &mut String, String, u32, u64);
-        reg_func2!(engine, "+", append, &mut String, String, f32, f64, bool);
-        engine.register_fn("+", append_array);
+        reg_func2x!(engine, "+", append, String, String, i32, i64, u32, u64, f32, f64, bool);
+        engine.register_fn("+", |x: String, y: Array| format!("{}{:?}", x, y));
+        engine.register_fn("+", |x: String, _: ()| format!("{}", x));
 
-        reg_func2b!(engine, "+", prepend, String, String, i32, i64, u32, u64, f32, f64, bool);
-        engine.register_fn("+", prepend_array);
+        reg_func2y!(engine, "+", prepend, String, String, i32, i64, u32, u64, f32, f64, bool);
+        engine.register_fn("+", |x: Array, y: String| format!("{:?}{}", x, y));
+        engine.register_fn("+", |_: (), y: String| format!("{}", y));
 
         // Register array iterator
         engine.register_iterator::<Array, _>(|a| {
