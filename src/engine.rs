@@ -1,18 +1,21 @@
 use std::any::TypeId;
 use std::cmp::{PartialEq, PartialOrd};
-use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
 use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Rem, Shl, Shr, Sub};
 use std::{convert::TryInto, sync::Arc};
 
+use hashbrown::HashMap;
+use smallvec::SmallVec;
+
 use crate::any::{Any, AnyExt};
 use crate::call::FunArgs;
 use crate::fn_register::{RegisterBoxFn, RegisterFn};
 use crate::parser::{lex, parse, Expr, FnDef, ParseError, Stmt, AST};
+use crate::BoxVal;
 use fmt::{Debug, Display};
 
-type Array = Vec<Box<dyn Any>>;
+type Array = SmallVec<[BoxVal<dyn Any>; 3]>;
 
 #[derive(Debug, Clone)]
 pub enum EvalAltResult {
@@ -30,7 +33,7 @@ pub enum EvalAltResult {
     ErrorCantOpenScriptFile(String),
     ErrorMalformedDotExpression,
     LoopBreak,
-    Return(Box<dyn Any>),
+    Return(BoxVal<dyn Any>),
 }
 
 impl EvalAltResult {
@@ -131,7 +134,7 @@ pub struct FnSpec {
     args: Option<Vec<TypeId>>,
 }
 
-type IteratorFn = dyn Fn(&Box<dyn Any>) -> Box<dyn Iterator<Item = Box<dyn Any>>>;
+type IteratorFn = dyn Fn(&BoxVal<dyn Any>) -> BoxVal<dyn Iterator<Item = BoxVal<dyn Any>>>;
 
 /// Rhai's engine type. This is what you use to run Rhai scripts
 ///
@@ -155,11 +158,11 @@ pub struct Engine {
 }
 
 pub enum FnIntExt {
-    Ext(Box<FnAny>),
+    Ext(BoxVal<FnAny>),
     Int(FnDef),
 }
 
-pub type FnAny = dyn Fn(Vec<&mut dyn Any>) -> Result<Box<dyn Any>, EvalAltResult>;
+pub type FnAny = dyn Fn(Vec<&mut dyn Any>) -> Result<BoxVal<dyn Any>, EvalAltResult>;
 
 /// A type containing information about current scope.
 /// Useful for keeping state between `Engine` runs
@@ -175,7 +178,7 @@ pub type FnAny = dyn Fn(Vec<&mut dyn Any>) -> Result<Box<dyn Any>, EvalAltResult
 /// ```
 ///
 /// Between runs, `Engine` only remembers functions when not using own `Scope`.
-pub type Scope = Vec<(String, Box<dyn Any>)>;
+pub type Scope = Vec<(String, BoxVal<dyn Any>)>;
 
 impl Engine {
     pub fn call_fn<'a, I, A, T>(&self, ident: I, args: A) -> Result<T, EvalAltResult>
@@ -187,7 +190,7 @@ impl Engine {
         self.call_fn_raw(ident.into(), args.into_vec())
             .and_then(|b| {
                 b.downcast()
-                    .map(|b| *b)
+                    .map(|b: BoxVal<T>| b.take())
                     .map_err(|a| EvalAltResult::ErrorMismatchOutputType((*a).type_name()))
             })
     }
@@ -198,7 +201,7 @@ impl Engine {
         &self,
         ident: String,
         args: Vec<&mut dyn Any>,
-    ) -> Result<Box<dyn Any>, EvalAltResult> {
+    ) -> Result<BoxVal<dyn Any>, EvalAltResult> {
         debug_println!(
             "Trying to call function {:?} with args {:?}",
             ident,
@@ -251,7 +254,7 @@ impl Engine {
             })
     }
 
-    pub fn register_fn_raw(&mut self, ident: String, args: Option<Vec<TypeId>>, f: Box<FnAny>) {
+    pub fn register_fn_raw(&mut self, ident: String, args: Option<Vec<TypeId>>, f: BoxVal<FnAny>) {
         debug_println!("Register; {:?} with args {:?}", ident, args);
 
         let spec = FnSpec { ident, args };
@@ -268,7 +271,7 @@ impl Engine {
     /// Register an iterator adapter for a type.
     pub fn register_iterator<T: Any, F>(&mut self, f: F)
     where
-        F: 'static + Fn(&Box<dyn Any>) -> Box<dyn Iterator<Item = Box<dyn Any>>>,
+        F: 'static + Fn(&BoxVal<dyn Any>) -> BoxVal<dyn Iterator<Item = BoxVal<dyn Any>>>,
     {
         self.type_iterators.insert(TypeId::of::<T>(), Arc::new(f));
     }
@@ -310,7 +313,7 @@ impl Engine {
         scope: &mut Scope,
         this_ptr: &mut dyn Any,
         dot_rhs: &Expr,
-    ) -> Result<Box<dyn Any>, EvalAltResult> {
+    ) -> Result<BoxVal<dyn Any>, EvalAltResult> {
         use std::iter::once;
 
         match *dot_rhs {
@@ -318,7 +321,7 @@ impl Engine {
                 let mut args: Array = args
                     .iter()
                     .map(|arg| self.eval_expr(scope, arg))
-                    .collect::<Result<Vec<_>, _>>()?;
+                    .collect::<Result<Array, _>>()?;
                 let args = once(this_ptr)
                     .chain(args.iter_mut().map(|b| b.as_mut()))
                     .collect();
@@ -385,7 +388,7 @@ impl Engine {
         scope: &mut Scope,
         id: &str,
         idx: &Expr,
-    ) -> Result<(usize, usize, Box<dyn Any>), EvalAltResult> {
+    ) -> Result<(usize, usize, BoxVal<dyn Any>), EvalAltResult> {
         let idx_boxed = self
             .eval_expr(scope, idx)?
             .downcast::<i64>()
@@ -413,7 +416,7 @@ impl Engine {
         scope: &mut Scope,
         dot_lhs: &Expr,
         dot_rhs: &Expr,
-    ) -> Result<Box<dyn Any>, EvalAltResult> {
+    ) -> Result<BoxVal<dyn Any>, EvalAltResult> {
         match *dot_lhs {
             Expr::Identifier(ref id) => {
                 let (sc_idx, mut target) = Self::search_scope(scope, id, |x| Ok(x.box_clone()))?;
@@ -443,8 +446,8 @@ impl Engine {
         &self,
         this_ptr: &mut dyn Any,
         dot_rhs: &Expr,
-        mut source_val: Box<dyn Any>,
-    ) -> Result<Box<dyn Any>, EvalAltResult> {
+        mut source_val: BoxVal<dyn Any>,
+    ) -> Result<BoxVal<dyn Any>, EvalAltResult> {
         match *dot_rhs {
             Expr::Identifier(ref id) => {
                 let set_fn_name = "set$".to_string() + id;
@@ -475,8 +478,8 @@ impl Engine {
         scope: &mut Scope,
         dot_lhs: &Expr,
         dot_rhs: &Expr,
-        source_val: Box<dyn Any>,
-    ) -> Result<Box<dyn Any>, EvalAltResult> {
+        source_val: BoxVal<dyn Any>,
+    ) -> Result<BoxVal<dyn Any>, EvalAltResult> {
         match *dot_lhs {
             Expr::Identifier(ref id) => {
                 let (sc_idx, mut target) = Self::search_scope(scope, id, |x| Ok(x.box_clone()))?;
@@ -502,12 +505,12 @@ impl Engine {
         }
     }
 
-    fn eval_expr(&self, scope: &mut Scope, expr: &Expr) -> Result<Box<dyn Any>, EvalAltResult> {
+    fn eval_expr(&self, scope: &mut Scope, expr: &Expr) -> Result<BoxVal<dyn Any>, EvalAltResult> {
         match *expr {
-            Expr::IntegerConstant(i) => Ok(Box::new(i)),
-            Expr::FloatConstant(i) => Ok(Box::new(i)),
-            Expr::StringConstant(ref s) => Ok(Box::new(s.clone())),
-            Expr::CharConstant(ref c) => Ok(Box::new(*c)),
+            Expr::IntegerConstant(i) => Ok(BoxVal::new(i)),
+            Expr::FloatConstant(i) => Ok(BoxVal::new(i)),
+            Expr::StringConstant(ref s) => Ok(BoxVal::new(s.clone())),
+            Expr::CharConstant(ref c) => Ok(BoxVal::new(*c)),
             Expr::Identifier(ref id) => {
                 for &mut (ref name, ref mut val) in &mut scope.iter_mut().rev() {
                     if *id == *name {
@@ -528,7 +531,7 @@ impl Engine {
                             if *n == *name {
                                 *val = rhs_val;
 
-                                return Ok(Box::new(()));
+                                return Ok(BoxVal::new(()));
                             }
                         }
                         Err(EvalAltResult::ErrorVariableNotFound(n.clone()))
@@ -551,7 +554,7 @@ impl Engine {
                                             ))
                                         } else {
                                             arr_typed[i as usize] = rhs_val;
-                                            Ok(Box::new(()))
+                                            Ok(BoxVal::new(()))
                                         }
                                     } else {
                                         Err(EvalAltResult::ErrorIndexMismatch)
@@ -579,7 +582,7 @@ impl Engine {
                     arr.push(arg);
                 }
 
-                Ok(Box::new(arr))
+                Ok(BoxVal::new(arr))
             }
             Expr::FunctionCall(ref fn_name, ref args) => self.call_fn_raw(
                 fn_name.to_owned(),
@@ -590,18 +593,18 @@ impl Engine {
                     .map(|b| b.as_mut())
                     .collect(),
             ),
-            Expr::True => Ok(Box::new(true)),
-            Expr::False => Ok(Box::new(false)),
-            Expr::Unit => Ok(Box::new(())),
+            Expr::True => Ok(BoxVal::new(true)),
+            Expr::False => Ok(BoxVal::new(false)),
+            Expr::Unit => Ok(BoxVal::new(())),
         }
     }
 
-    fn eval_stmt(&self, scope: &mut Scope, stmt: &Stmt) -> Result<Box<dyn Any>, EvalAltResult> {
+    fn eval_stmt(&self, scope: &mut Scope, stmt: &Stmt) -> Result<BoxVal<dyn Any>, EvalAltResult> {
         match *stmt {
             Stmt::Expr(ref e) => self.eval_expr(scope, e),
             Stmt::Block(ref b) => {
                 let prev_len = scope.len();
-                let mut last_result: Result<Box<dyn Any>, EvalAltResult> = Ok(Box::new(()));
+                let mut last_result: Result<BoxVal<dyn Any>, EvalAltResult> = Ok(BoxVal::new(()));
 
                 for s in b.iter() {
                     last_result = self.eval_stmt(scope, s);
@@ -624,7 +627,7 @@ impl Engine {
                         if *g {
                             self.eval_stmt(scope, body)
                         } else {
-                            Ok(Box::new(()))
+                            Ok(BoxVal::new(()))
                         }
                     }
                     Err(_) => Err(EvalAltResult::ErrorIfGuardMismatch),
@@ -649,12 +652,12 @@ impl Engine {
                     Ok(g) => {
                         if *g {
                             match self.eval_stmt(scope, body) {
-                                Err(EvalAltResult::LoopBreak) => return Ok(Box::new(())),
+                                Err(EvalAltResult::LoopBreak) => return Ok(BoxVal::new(())),
                                 Err(x) => return Err(x),
                                 _ => (),
                             }
                         } else {
-                            return Ok(Box::new(()));
+                            return Ok(BoxVal::new(()));
                         }
                     }
                     Err(_) => return Err(EvalAltResult::ErrorIfGuardMismatch),
@@ -662,7 +665,7 @@ impl Engine {
             },
             Stmt::Loop(ref body) => loop {
                 match self.eval_stmt(scope, body) {
-                    Err(EvalAltResult::LoopBreak) => return Ok(Box::new(())),
+                    Err(EvalAltResult::LoopBreak) => return Ok(BoxVal::new(())),
                     Err(x) => return Err(x),
                     _ => (),
                 }
@@ -671,7 +674,7 @@ impl Engine {
                 let arr = self.eval_expr(scope, expr)?;
                 let tid = Any::type_id(&*arr);
                 if let Some(iter_fn) = self.type_iterators.get(&tid) {
-                    scope.push((name.clone(), Box::new(())));
+                    scope.push((name.clone(), BoxVal::new(())));
                     let idx = scope.len() - 1;
                     for a in iter_fn(&arr) {
                         scope[idx].1 = a;
@@ -682,13 +685,13 @@ impl Engine {
                         }
                     }
                     scope.remove(idx);
-                    Ok(Box::new(()))
+                    Ok(BoxVal::new(()))
                 } else {
                     return Err(EvalAltResult::ErrorForMismatch);
                 }
             }
             Stmt::Break => Err(EvalAltResult::LoopBreak),
-            Stmt::Return => Err(EvalAltResult::Return(Box::new(()))),
+            Stmt::Return => Err(EvalAltResult::Return(BoxVal::new(()))),
             Stmt::ReturnWithVal(ref a) => {
                 let result = self.eval_expr(scope, a)?;
                 Err(EvalAltResult::Return(result))
@@ -699,9 +702,9 @@ impl Engine {
                         let i = self.eval_expr(scope, v)?;
                         scope.push((name.clone(), i));
                     }
-                    None => scope.push((name.clone(), Box::new(()))),
+                    None => scope.push((name.clone(), BoxVal::new(()))),
                 };
-                Ok(Box::new(()))
+                Ok(BoxVal::new(()))
             }
         }
     }
@@ -781,7 +784,7 @@ impl Engine {
         ast: &AST,
     ) -> Result<T, EvalAltResult> {
         let AST(os, fns) = ast;
-        let mut x: Result<Box<dyn Any>, EvalAltResult> = Ok(Box::new(()));
+        let mut x: Result<BoxVal<dyn Any>, EvalAltResult> = Ok(BoxVal::new(()));
 
         for f in fns {
             let name = f.name.clone();
@@ -805,7 +808,7 @@ impl Engine {
         let x = x?;
 
         match x.downcast::<T>() {
-            Ok(out) => Ok(*out),
+            Ok(out) => Ok(out.take()),
             Err(a) => Err(EvalAltResult::ErrorMismatchOutputType((*a).type_name())),
         }
     }
@@ -1045,7 +1048,7 @@ impl Engine {
         // engine.register_fn("[]", idx);
         // FIXME?  Registering array lookups are a special case because we want to return boxes
         // directly let ent = engine.fns.entry("[]".to_string()).or_insert_with(Vec::new);
-        // (*ent).push(FnType::ExternalFn2(Box::new(idx)));
+        // (*ent).push(FnType::ExternalFn2(BoxVal::new(idx)));
 
         // Register print and debug
         fn print_debug<T: Debug>(x: T) {
@@ -1066,7 +1069,7 @@ impl Engine {
 
         // Register array functions
         fn push<T: Any + 'static>(list: &mut Array, item: T) {
-            list.push(Box::new(item));
+            list.push(BoxVal::new(item));
         }
 
         reg_func2x!(engine, "push", push, &mut Array, (), i32, i64, u32, u64);
@@ -1097,17 +1100,17 @@ impl Engine {
 
         // Register array iterator
         engine.register_iterator::<Array, _>(|a| {
-            Box::new(a.downcast_ref::<Array>().unwrap().clone().into_iter())
+            BoxVal::new(a.downcast_ref::<Array>().unwrap().clone().into_iter())
         });
 
         // Register range function
         use std::ops::Range;
         engine.register_iterator::<Range<i64>, _>(|a| {
-            Box::new(
+            BoxVal::new(
                 a.downcast_ref::<Range<i64>>()
                     .unwrap()
                     .clone()
-                    .map(|n| Box::new(n) as Box<dyn Any>),
+                    .map(|n| BoxVal::new(n) as BoxVal<dyn Any>),
             )
         });
 

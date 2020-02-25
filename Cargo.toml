@@ -14,5 +14,13 @@ include = [
     "Cargo.toml"
 ]
 
+[dependencies]
+hashbrown = "0.7"
+smallvec = "1.2"
+smallbox = { version = "0.8", features = ["coerce"] }
+
 [features]
 debug_msgs = []
+
+[dev-dependencies]
+rhai_old = { git = "https://github.com/jonathandturner/rhai.git", package = "rhai" }

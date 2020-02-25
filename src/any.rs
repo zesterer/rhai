@@ -1,12 +1,13 @@
 use std::any::{type_name, Any as StdAny, TypeId};
 use std::fmt;
+use crate::BoxVal;
 
 pub trait Any: StdAny {
     fn type_id(&self) -> TypeId;
 
     fn type_name(&self) -> String;
 
-    fn box_clone(&self) -> Box<dyn Any>;
+    fn box_clone(&self) -> BoxVal<dyn Any>;
 
     /// This type may only be implemented by `rhai`.
     #[doc(hidden)]
@@ -27,8 +28,8 @@ where
     }
 
     #[inline]
-    fn box_clone(&self) -> Box<dyn Any> {
-        Box::new(self.clone())
+    fn box_clone(&self) -> BoxVal<dyn Any> {
+        BoxVal::new(self.clone())
     }
 
     fn _closed(&self) -> _Private {
@@ -68,7 +69,7 @@ impl dyn Any {
     }
 }
 
-impl Clone for Box<dyn Any> {
+impl Clone for BoxVal<dyn Any> {
     fn clone(&self) -> Self {
         Any::box_clone(self.as_ref() as &dyn Any)
     }
@@ -81,15 +82,15 @@ impl fmt::Debug for dyn Any {
 }
 
 pub trait AnyExt: Sized {
-    fn downcast<T: Any + Clone>(self) -> Result<Box<T>, Self>;
+    fn downcast<T: Any + Clone>(self) -> Result<BoxVal<T>, Self>;
 }
 
-impl AnyExt for Box<dyn Any> {
-    fn downcast<T: Any + Clone>(self) -> Result<Box<T>, Self> {
+impl AnyExt for BoxVal<dyn Any> {
+    fn downcast<T: Any + Clone>(self) -> Result<BoxVal<T>, Self> {
         if self.is::<T>() {
             unsafe {
-                let raw: *mut dyn Any = Box::into_raw(self);
-                Ok(Box::from_raw(raw as *mut T))
+                let raw: *mut dyn Any = BoxVal::into_raw(self);
+                Ok(BoxVal::from_raw(raw as *mut T))
             }
         } else {
             Err(self)

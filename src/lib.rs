@@ -1,3 +1,5 @@
+#![feature(coerce_unsized, unsize)]
+
 //! # Rhai - embedded scripting for Rust
 //!
 //! Rhai is a tiny, simple and very fast embedded scripting language for Rust
@@ -44,8 +46,10 @@ mod call;
 mod engine;
 mod fn_register;
 mod parser;
+mod box_val;
 
 pub use any::Any;
 pub use engine::{Engine, EvalAltResult, Scope};
 pub use fn_register::{RegisterBoxFn, RegisterFn};
 pub use parser::{ParseError, ParseErrorType, AST};
+pub use box_val::BoxVal;
