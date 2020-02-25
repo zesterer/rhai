@@ -16,7 +16,7 @@ include = [
 
 [dependencies]
 hashbrown = "0.7"
-smallvec = "1.2"
+smallvec = "1.0"
 smallbox = { version = "0.8", features = ["coerce"] }
 
 [features]
