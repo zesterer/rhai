@@ -5,11 +5,11 @@ use std::{
     convert::AsRef,
     fmt,
 };
-use smallbox::{SmallBox, space::S4};
+use smallbox::{SmallBox, space};
 
 #[repr(transparent)]
 #[derive(Clone)]
-pub struct BoxVal<T: ?Sized>(SmallBox<T, S4>);
+pub struct BoxVal<T: ?Sized>(SmallBox<T, space::S2>);
 
 impl<T> BoxVal<T> {
     pub fn new(item: T) -> Self {
